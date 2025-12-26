@@ -42,7 +42,6 @@ const db = getFirestore(app);
 const APP_ID = 'cleaning-app-v1'; 
 let currentUser = null;
 
-// 嘗試啟用離線緩存
 enableIndexedDbPersistence(db).catch((err) => {
     console.log("Persistence disabled:", err.code);
 });
@@ -250,7 +249,7 @@ function clearFormData() {
     window.setStatus('completed'); 
 }
 
-// --- 7. 報表邏輯 (Year Report) ---
+// --- 7. 報表邏輯 (Year Report) - 已更新：支援修改付款方式 ---
 
 window.changeReportYear = function(delta) { 
     window.appState.reportYear += delta; 
@@ -311,7 +310,8 @@ window.renderYearlyReport = function() {
                         if(m >= 1 && m <= 12) { 
                             let status = 'paid'; 
                             if(r.status === 'no_payment' || r.status === 'no_receipt') { status = 'warning'; } 
-                            monthInfo[m] = { status: status, date: collectDate, id: r.id, amount: r.amount, fullDate: r.date }; 
+                            // 這裡多存了 type (付款方式)
+                            monthInfo[m] = { status: status, date: collectDate, id: r.id, amount: r.amount, fullDate: r.date, type: r.type || 'cash' }; 
                         } 
                     }); 
                 } 
@@ -326,9 +326,10 @@ window.renderYearlyReport = function() {
             const info = monthInfo[m]; 
             let className = 'year-dot flex flex-col justify-center leading-none'; 
             let content = m; 
-            let onclick = `openReportAction('${addr}', ${year}, ${m}, null)`; 
+            let onclick = `openReportAction('${addr}', ${year}, ${m}, null, null, null, 'cash')`; 
             if(info) { 
-                onclick = `openReportAction('${addr}', ${year}, ${m}, '${info.id}', '${info.fullDate}', ${info.amount})`; 
+                // 這裡傳入了 info.type
+                onclick = `openReportAction('${addr}', ${year}, ${m}, '${info.id}', '${info.fullDate}', ${info.amount}, '${info.type}')`; 
                 if(info.status === 'paid') { 
                     className += ' paid'; 
                     content = `<span class="text-[8px] opacity-75">${m}月</span><span class="text-[10px]">${info.date}</span>`; 
@@ -347,10 +348,24 @@ window.renderYearlyReport = function() {
     }); 
 };
 
-window.openReportAction = function(address, year, month, recordId, date, amount) { 
+// 更新後的 openReportAction：增加了 type (付款方式) 的處理
+window.openReportAction = function(address, year, month, recordId, date, amount, type) { 
     const title = document.getElementById('reportActionTitle'); 
     const content = document.getElementById('reportActionContent'); 
     
+    // 產生付款方式的選單 HTML
+    const getTypeSelect = (id, currentVal) => `
+        <div>
+            <label class="block text-xs text-gray-500 mb-1">方式</label>
+            <select id="${id}" class="w-full p-2 border rounded bg-white">
+                <option value="cash" ${currentVal === 'cash' ? 'selected' : ''}>💵 現金</option>
+                <option value="transfer" ${currentVal === 'transfer' ? 'selected' : ''}>🏦 匯款</option>
+                <option value="linepay" ${currentVal === 'linepay' ? 'selected' : ''}>🟢 LinePay</option>
+                <option value="dad" ${currentVal === 'dad' ? 'selected' : ''}>👴 匯給爸爸</option>
+            </select>
+        </div>
+    `;
+
     if(recordId) { 
         title.innerText = `編輯紀錄：${address} (${month}月)`; 
         content.innerHTML = ` 
@@ -362,9 +377,10 @@ window.openReportAction = function(address, year, month, recordId, date, amount)
                 <label class="block text-xs text-gray-500 mb-1">金額</label> 
                 <input type="number" id="reportEditAmount" value="${amount}" class="w-full p-2 border rounded"> 
             </div> 
+            ${getTypeSelect('reportEditType', type)}
             <div class="grid grid-cols-2 gap-2 mt-4"> 
                 <button onclick="deleteReportRecord('${recordId}')" class="py-2 bg-red-100 text-red-600 rounded-lg font-bold">刪除紀錄</button> 
-                <button onclick="updateReportRecord('${recordId}', document.getElementById('reportEditDate').value, document.getElementById('reportEditAmount').value)" class="py-2 bg-blue-600 text-white rounded-lg font-bold">儲存修改</button> 
+                <button onclick="updateReportRecord('${recordId}', document.getElementById('reportEditDate').value, document.getElementById('reportEditAmount').value, document.getElementById('reportEditType').value)" class="py-2 bg-blue-600 text-white rounded-lg font-bold">儲存修改</button> 
             </div> `; 
     } else { 
         const cust = window.appState.customers.find(c => c.address === address); 
@@ -381,14 +397,57 @@ window.openReportAction = function(address, year, month, recordId, date, amount)
                 <label class="block text-xs text-gray-500 mb-1">金額</label> 
                 <input type="number" id="reportAddAmount" value="${defAmount}" placeholder="輸入金額" class="w-full p-2 border rounded"> 
             </div> 
-            <button onclick="addReportRecord('${address}', ${year}, ${month}, document.getElementById('reportAddAmount').value)" class="w-full py-3 bg-emerald-500 text-white rounded-lg font-bold mt-4">確認補登</button> `; 
+            ${getTypeSelect('reportAddType', 'cash')}
+            <button onclick="addReportRecord('${address}', ${year}, ${month}, document.getElementById('reportAddAmount').value, document.getElementById('reportAddType').value)" class="w-full py-3 bg-emerald-500 text-white rounded-lg font-bold mt-4">確認補登</button> `; 
     } 
     document.getElementById('reportActionModal').classList.remove('hidden'); 
 };
 
 window.closeReportActionModal = function(e) { if(e && e.target !== e.currentTarget) return; document.getElementById('reportActionModal').classList.add('hidden'); };
-window.addReportRecord = async function(address, year, month, amount) { if(!currentUser) return; const record = { date: new Date().toISOString().split('T')[0], address: address, amount: amount, floor: '', months: `${year}年 ${month}月`, note: '補登', type: 'cash', category: 'stairs', collector: window.appState.currentCollector, status: 'completed', createdAt: serverTimestamp() }; const cust = window.appState.customers.find(c => c.address === address); if(cust) { if(cust.amount) record.amount = cust.amount; if(cust.category) record.category = cust.category; if(cust.floor) record.floor = cust.floor; } try { await addDoc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'records'), record); window.closeReportActionModal(null); window.showToast("✅ 已補登"); } catch(e) { window.showToast("補登失敗"); } };
-window.updateReportRecord = async function(docId, date, amount) { if(!currentUser) return; try { await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'records', docId), { date: date, amount: parseInt(amount) }); window.closeReportActionModal(null); window.showToast("已更新"); } catch(e) { window.showToast("更新失敗"); } };
+
+// 更新：addReportRecord 接收 type
+window.addReportRecord = async function(address, year, month, amount, type) { 
+    if(!currentUser) return; 
+    const record = { 
+        date: new Date().toISOString().split('T')[0], 
+        address: address, 
+        amount: amount, 
+        floor: '', 
+        months: `${year}年 ${month}月`, 
+        note: '補登', 
+        type: type || 'cash', // 存入 type
+        category: 'stairs', 
+        collector: window.appState.currentCollector, 
+        status: 'completed', 
+        createdAt: serverTimestamp() 
+    }; 
+    const cust = window.appState.customers.find(c => c.address === address); 
+    if(cust) { 
+        if(cust.amount) record.amount = cust.amount; 
+        if(cust.category) record.category = cust.category; 
+        if(cust.floor) record.floor = cust.floor; 
+    } 
+    try { 
+        await addDoc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'records'), record); 
+        window.closeReportActionModal(null); 
+        window.showToast("✅ 已補登"); 
+    } catch(e) { window.showToast("補登失敗"); } 
+};
+
+// 更新：updateReportRecord 接收 type
+window.updateReportRecord = async function(docId, date, amount, type) { 
+    if(!currentUser) return; 
+    try { 
+        await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'records', docId), { 
+            date: date, 
+            amount: parseInt(amount),
+            type: type // 更新 type
+        }); 
+        window.closeReportActionModal(null); 
+        window.showToast("已更新"); 
+    } catch(e) { window.showToast("更新失敗"); } 
+};
+
 window.deleteReportRecord = async function(docId) { if(!currentUser) return; if(confirm("確定刪除？這月份將變回未收狀態")) { await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'records', docId)); window.closeReportActionModal(null); window.showToast("🗑️ 已刪除"); } };
 
 // --- 8. UI RENDERING (畫面顯示) ---
@@ -520,6 +579,8 @@ window.renderRecords = function() {
     });
 };
 
+// --- MODAL LOGIC ---
+
 window.openConfirmCollectionModal = function(id, amount, address, category, serviceDate) {
     const floor = document.getElementById(`p-floor-${id}`).value;
     const months = document.getElementById(`p-months-${id}`).value;
@@ -577,8 +638,6 @@ window.doConfirmCollection = function() {
     closeConfirmCollectionModal(null);
 };
 
-// --- 9. 其他 UI 輔助功能 ---
-
 window.setStatus = function(status) { const input = document.getElementById('inputStatus'); if (input.value === status) input.value = 'completed'; else input.value = status; const current = input.value; const btnReceipt = document.getElementById('btn-status-receipt'); const btnPayment = document.getElementById('btn-status-payment'); const baseClass = 'status-btn flex-1 p-2 rounded-lg font-bold border flex justify-center items-center gap-1 transition-all'; btnReceipt.className = baseClass + ' bg-red-50 text-red-500 border-red-200'; btnPayment.className = baseClass + ' bg-orange-50 text-orange-500 border-orange-200'; if(current === 'no_receipt') { btnReceipt.className = baseClass + ' active active-red bg-red-100 border-red-400 text-red-700'; } else if(current === 'no_payment') { btnPayment.className = baseClass + ' active active-orange bg-orange-100 border-orange-400 text-orange-700'; } else { btnReceipt.style.opacity = '0.6'; btnReceipt.style.filter = 'grayscale(1)'; btnPayment.style.opacity = '0.6'; btnPayment.style.filter = 'grayscale(1)'; return; } btnReceipt.style.opacity = '1'; btnReceipt.style.filter = 'none'; btnPayment.style.opacity = '1'; btnPayment.style.filter = 'none'; if (current === 'no_receipt') { btnPayment.style.opacity = '0.6'; btnPayment.style.filter = 'grayscale(1)'; } else if (current === 'no_payment') { btnReceipt.style.opacity = '0.6'; btnReceipt.style.filter = 'grayscale(1)'; } };
 window.setModalStatus = function(status) { const input = document.getElementById('modalInputStatus'); if (input.value === status) input.value = 'completed'; else input.value = status; const current = input.value; const btnReceipt = document.getElementById('modal-status-receipt'); const btnPayment = document.getElementById('modal-status-payment'); const baseClass = 'status-btn flex-1 p-2 rounded-lg font-bold border flex justify-center items-center gap-1 transition-all'; btnReceipt.className = baseClass + ' bg-red-50 text-red-500 border-red-200'; btnPayment.className = baseClass + ' bg-orange-50 text-orange-500 border-orange-200'; if(current === 'no_receipt') { btnReceipt.className = baseClass + ' active active-red bg-red-100 border-red-400 text-red-700'; } else if(current === 'no_payment') { btnPayment.className = baseClass + ' active active-orange bg-orange-100 border-orange-400 text-orange-700'; } else { btnReceipt.style.opacity = '0.6'; btnReceipt.style.filter = 'grayscale(1)'; btnPayment.style.opacity = '0.6'; btnPayment.style.filter = 'grayscale(1)'; return; } btnReceipt.style.opacity = '1'; btnReceipt.style.filter = 'none'; btnPayment.style.opacity = '1'; btnPayment.style.filter = 'none'; if (current === 'no_receipt') { btnPayment.style.opacity = '0.6'; btnPayment.style.filter = 'grayscale(1)'; } else if (current === 'no_payment') { btnReceipt.style.opacity = '0.6'; btnReceipt.style.filter = 'grayscale(1)'; } };
 window.changeYear = function(delta) { window.appState.pickerYear += delta; window.renderMonthPicker(); const addr = document.getElementById('inputAddress').value; if(addr) window.checkPaidStatus(addr); };
@@ -611,6 +670,7 @@ window.closeAddCustomerModal = function(e) { if(e && e.target !== e.currentTarge
 window.openCustomerSelect = function() { window.renderCustomerSelect(); document.getElementById('customerModal').classList.remove('hidden'); };
 window.closeCustomerSelect = function(e) { if(e && e.target !== e.currentTarget) return; document.getElementById('customerModal').classList.add('hidden'); };
 
+// --- 9. 程式啟動 ---
 window.onload = function() {
     const today = new Date();
     const dateStr = today.toISOString().split('T')[0];
