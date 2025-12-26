@@ -1,3 +1,179 @@
-html, body {
+/* iOS Safe Area Support */
+.pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+.pt-safe { padding-top: env(safe-area-inset-top); }
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background-color: #f3f4f6;
+    padding-bottom: calc(90px + env(safe-area-inset-bottom));
+    -webkit-tap-highlight-color: transparent;
     overscroll-behavior-y: none;
 }
+
+.no-select { user-select: none; -webkit-user-select: none; }
+input, textarea { user-select: text; -webkit-user-select: text; font-size: 16px !important; }
+
+.card {
+    background: white;
+    border-radius: 16px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    margin-bottom: 16px;
+    overflow: hidden;
+}
+
+.btn-primary {
+    background-color: #10b981;
+    color: white;
+    transition: transform 0.1s;
+}
+.btn-primary:active { background-color: #059669; transform: scale(0.98); }
+
+.tag-cash { background-color: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; }
+.tag-transfer { background-color: #d1fae5; color: #065f46; border: 1px solid #a7f3d0; }
+
+/* Service Tags */
+.tag-stairs { background-color: #ffedd5; color: #9a3412; border: 1px solid #fed7aa; } /* Orange */
+.tag-tank { background-color: #cffafe; color: #155e75; border: 1px solid #a5f3fc; } /* Cyan */
+
+/* Person Tags */
+.tag-zih-cing { background-color: #f5ebe0; color: #795548; border: 1px solid #e6dbd0; } 
+.tag-zih-han { background-color: #ffe4e6; color: #be185d; border: 1px solid #fda4af; } 
+.tag-zong-jing { background-color: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; } 
+
+.toast {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.85);
+    color: white;
+    padding: 12px 24px;
+    border-radius: 50px;
+    z-index: 11000;
+    display: none;
+    font-size: 16px;
+    font-weight: 500;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    width: max-content;
+    max-width: 90%;
+    text-align: center;
+}
+
+.badge-scroll::-webkit-scrollbar { display: none; }
+.badge-scroll { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Modal Styles */
+.modal-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 10000;
+    backdrop-filter: blur(2px);
+    display: flex;
+    align-items: flex-end;
+}
+.modal-content {
+    background: white;
+    width: 100%;
+    max-height: 85vh;
+    border-radius: 20px 20px 0 0;
+    padding: 20px;
+    padding-bottom: calc(30px + env(safe-area-inset-bottom));
+    overflow-y: auto;
+    animation: slideUp 0.3s ease-out;
+    box-shadow: 0 -4px 20px rgba(0,0,0,0.2);
+}
+@keyframes slideUp {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+}
+@media(min-width: 640px) {
+    .modal-overlay { align-items: center; justify-content: center; }
+    .modal-content { width: 90%; max-width: 500px; border-radius: 20px; padding-bottom: 20px; }
+}
+
+.list-btn:active {
+    background-color: #eff6ff;
+    transform: scale(0.99);
+}
+
+#loading-overlay {
+    position: fixed; inset: 0; background: rgba(255,255,255,0.8);
+    z-index: 11000; display: flex; justify-content: center; align-items: center;
+    backdrop-filter: blur(4px); transition: opacity 0.3s;
+}
+
+/* Tabs Styles */
+.collector-tab { transition: all 0.2s ease; }
+.collector-tab.active-zih-cing { background-color: #c2a992; color: white; box-shadow: 0 2px 5px rgba(194, 169, 146, 0.4); }
+.collector-tab.active-zih-han { background-color: #ff99ac; color: white; box-shadow: 0 2px 5px rgba(255, 153, 172, 0.4); }
+.collector-tab.active-zong-jing { background-color: #38bdf8; color: white; box-shadow: 0 2px 5px rgba(56, 189, 248, 0.4); }
+
+/* Service Toggle Styles */
+.service-btn { transition: all 0.2s; border: 2px solid transparent; opacity: 0.6; filter: grayscale(0.5); }
+.service-btn.active { opacity: 1; filter: grayscale(0); border-color: currentColor; transform: scale(1.02); }
+.service-btn.active i { animation: bounce 0.5s; }
+@keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+
+/* Status Styles */
+.status-btn {
+    opacity: 0.6; border: 2px solid transparent; filter: grayscale(1); transition: all 0.2s;
+}
+.status-btn.active {
+    opacity: 1; filter: grayscale(0); transform: scale(1.05);
+}
+.status-btn.active-red { border-color: #ef4444; background-color: #fee2e2; color: #b91c1c; }
+.status-btn.active-orange { border-color: #f97316; background-color: #ffedd5; color: #c2410c; }
+
+/* Month Picker Grid */
+.month-btn {
+    border: 2px solid #e5e7eb;
+    background: white;
+    color: #9ca3af;
+    padding: 10px 4px;
+    border-radius: 10px;
+    font-size: 16px;
+    font-weight: bold;
+    transition: all 0.15s;
+    position: relative;
+}
+.month-btn.selected {
+    background: #3b82f6; color: white; border-color: #2563eb; transform: scale(1.05);
+    box-shadow: 0 4px 6px rgba(59, 130, 246, 0.3);
+    z-index: 10;
+}
+.month-btn.paid {
+    background: #d1fae5; color: #065f46; border-color: #34d399; cursor: not-allowed;
+}
+.month-btn.paid::after {
+    content: attr(data-date); position: absolute; bottom: 2px; left: 50%;
+    transform: translateX(-50%); font-size: 9px; line-height: 1; white-space: nowrap;
+}
+
+/* Annual Report Styles (Updated) */
+.year-dot {
+    width: 100%; aspect-ratio: 1; border-radius: 8px; 
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font-weight: bold; border: 1px solid #e5e7eb; color: #d1d5db;
+    background-color: #f9fafb;
+    line-height: 1.2;
+    cursor: pointer;
+    transition: transform 0.1s;
+}
+.year-dot:active { transform: scale(0.95); }
+.year-dot.paid { background-color: #10b981; color: white; border-color: #059669; }
+.year-dot.warning { background-color: #fff7ed; color: #f97316; border-color: #f97316; border-width: 2px; }
+
+/* Print Styles */
+@media print {
+    #view-entry, #view-settle, #view-settings, #view-report, #mainHeader, #bottomNav, .toast, #loading-overlay, .modal-overlay, button { display: none !important; }
+    #printContainer { display: block !important; width: 100%; }
+    body { background-color: white; font-size: 12pt; color: black; }
+    .print-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    .print-table th, .print-table td { border: 1px solid #000; padding: 8px; text-align: left; }
+    .print-table th { background-color: #f3f4f6 !important; font-weight: bold; -webkit-print-color-adjust: exact; }
+    .print-summary { border: 2px solid #000; padding: 15px; margin-bottom: 20px; display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; }
+    .print-title { text-align: center; font-size: 24px; font-weight: bold; margin-bottom: 10px; margin-top: 20px; }
+}
+#printContainer { display: none; }
+#mainHeader { transition: background-color 0.3s ease; }
