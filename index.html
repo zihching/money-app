@@ -2,19 +2,480 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>收錢小幫手</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#c2a992">
+    <title>清潔收費小幫手</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
 </head>
-<body class="bg-blue-50 min-h-screen">
-    <div id="app" class="max-w-md mx-auto bg-white min-h-screen shadow-lg p-6">
-        <h1 class="text-2xl font-bold text-center mb-6 text-blue-600">{{ appTitle }}</h1>
-        <div class="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-center">
-            <p class="text-gray-700">新家蓋好了！準備搬入舊資料...</p>
+<body class="no-select">
+
+    <div id="loading-overlay">
+        <div class="text-emerald-600 font-bold flex flex-col items-center">
+            <i class="fa-solid fa-circle-notch fa-spin text-4xl mb-2"></i>
+            <span>連線同步中...</span>
         </div>
     </div>
-    <script src="app.js"></script>
+
+    <div id="toast" class="toast">操作成功</div>
+
+    <div id="mainHeader" class="bg-[#c2a992] text-white pt-safe sticky top-0 z-20 shadow-lg transition-colors duration-300">
+        <div class="px-4 pb-4 pt-2">
+            <div class="flex justify-between items-center mb-3">
+                <h1 class="text-xl font-bold flex items-center gap-2 text-white drop-shadow-sm">
+                    <span id="headerTitleIcon"><i class="fa-solid fa-mug-hot"></i></span> 
+                    <span id="headerTitleText">收費小幫手</span>
+                </h1>
+                <div class="text-xs font-medium bg-white/20 px-2 py-1 rounded backdrop-blur-sm shadow-sm flex items-center gap-1">
+                    <i class="fa-solid fa-cloud text-[10px]"></i> <span id="headerDate"></span>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-3 text-center">
+                <div class="bg-white/10 backdrop-blur-sm rounded-xl p-2 border border-white/20 shadow-sm">
+                    <div class="text-xs text-white mb-1 font-medium opacity-90">個人手頭 (含LP)</div>
+                    <div class="text-xl font-bold tracking-wide drop-shadow-sm" id="headerCashTotal">$0</div>
+                </div>
+                <div class="bg-white/10 backdrop-blur-sm rounded-xl p-2 border border-white/20 shadow-sm">
+                    <div class="text-xs text-white mb-1 font-medium opacity-90">個人全部營收</div>
+                    <div class="text-xl font-bold tracking-wide drop-shadow-sm" id="headerTransferTotal">$0</div>
+                </div>
+            </div>
+             <div class="mt-2 text-center text-white/90 font-medium">
+                <span class="text-xs opacity-90">今日個人營收: </span>
+                <span id="headerGrandTotal" class="font-bold text-sm drop-shadow-sm">$0</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="container mx-auto px-4 py-4 max-w-md pb-28">
+
+        <div id="view-entry">
+
+            <div class="flex p-1 bg-gray-100 rounded-xl mb-4 shadow-inner border border-gray-200">
+                <button onclick="setCollector('子晴')" id="tab-zih-cing" class="collector-tab flex-1 py-3 rounded-lg text-sm font-bold text-gray-400 flex items-center justify-center gap-1">
+                    🎠 子晴
+                </button>
+                <button onclick="setCollector('子涵')" id="tab-zih-han" class="collector-tab flex-1 py-3 rounded-lg text-sm font-bold text-gray-400 flex items-center justify-center gap-1">
+                    🌸 子涵
+                </button>
+                <button onclick="setCollector('宗敬')" id="tab-zong-jing" class="collector-tab flex-1 py-3 rounded-lg text-sm font-bold text-gray-400 flex items-center justify-center gap-1">
+                    ☁️ 宗敬
+                </button>
+            </div>
+
+            <div class="card p-5 border-t-4 border-[#e6dbd0] transition-colors duration-300" id="entryCard">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-lg font-bold text-gray-800 flex items-center">
+                        <i class="fa-solid fa-pen-circle mr-2 opacity-80"></i> 新增
+                    </h2>
+                    <button onclick="openCustomerSelect()" class="bg-gray-600 text-white text-sm px-4 py-2 rounded-lg shadow active:scale-95 flex items-center transition-all" id="quickSelectBtn">
+                        <i class="fa-solid fa-folder-open mr-2"></i> 快速選客戶
+                    </button>
+                </div>
+                
+                <div class="space-y-4">
+                    <div class="hidden">
+                        <input type="date" id="inputDate">
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">服務項目</label>
+                        <div class="grid grid-cols-2 gap-3">
+                            <button type="button" onclick="setServiceCategory('stairs')" id="btn-cat-stairs" class="service-btn active p-3 rounded-xl bg-orange-50 text-orange-700 font-bold flex justify-center items-center gap-2 shadow-sm">
+                                🪜 洗樓梯
+                            </button>
+                            <button type="button" onclick="setServiceCategory('tank')" id="btn-cat-tank" class="service-btn p-3 rounded-xl bg-cyan-50 text-cyan-700 font-bold flex justify-center items-center gap-2 shadow-sm">
+                                💧 洗水塔
+                            </button>
+                        </div>
+                        <input type="hidden" id="inputServiceType" value="stairs">
+                    </div>
+
+                    <div class="flex gap-3">
+                        <div class="flex-1">
+                            <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">地址 / 客戶</label>
+                            <input type="text" id="inputAddress" oninput="debounceCheckPaidStatus(this.value)" placeholder="例如：中正路100號" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-lg focus:border-gray-400 outline-none transition-colors">
+                        </div>
+                        <div class="w-24">
+                            <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">樓層/戶號</label>
+                            <input type="text" id="inputFloor" placeholder="5F" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-lg text-center focus:border-gray-400 outline-none transition-colors">
+                        </div>
+                    </div>
+
+                    <div class="bg-gray-50 p-3 rounded-xl border border-gray-200">
+                        <div class="flex justify-between items-center mb-2">
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                <i class="fa-regular fa-calendar-check mr-1"></i> 收費月份
+                            </label>
+                            <div class="flex items-center bg-white rounded-lg border border-gray-300 overflow-hidden shadow-sm">
+                                <button type="button" onclick="changeYear(-1)" class="px-3 py-1 hover:bg-gray-100 text-gray-600 border-r border-gray-200 active:bg-gray-200"><i class="fa-solid fa-chevron-left"></i></button>
+                                <span class="px-3 py-1 text-sm font-bold text-emerald-600 min-w-[60px] text-center bg-emerald-50" id="pickerYearDisplay">114年</span>
+                                <button type="button" onclick="changeYear(1)" class="px-3 py-1 hover:bg-gray-100 text-gray-600 border-l border-gray-200 active:bg-gray-200"><i class="fa-solid fa-chevron-right"></i></button>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-4 gap-2" id="monthPickerGrid">
+                            </div>
+                        <input type="hidden" id="selectedMonths" value="">
+                        <div class="text-right mt-1 text-xs text-blue-500 font-medium h-4" id="statusHint"></div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">金額</label>
+                            <input type="number" id="inputAmount" placeholder="$" inputmode="decimal" pattern="[0-9]*" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-xl font-bold text-gray-700 focus:border-gray-400 outline-none transition-colors">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">方式</label>
+                            <select id="inputType" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-lg h-[54px] focus:border-gray-400 outline-none transition-colors">
+                                <option value="cash">💵 現金</option>
+                                <option value="transfer">🏦 匯款</option>
+                                <option value="linepay">🟢 LinePay</option>
+                                <option value="dad">👴 匯給爸爸</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div>
+                         <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">特殊狀態提醒</label>
+                         <div class="flex gap-2 mb-3">
+                            <button type="button" onclick="setStatus('no_receipt')" id="btn-status-receipt" class="status-btn flex-1 p-2 rounded-lg bg-red-50 text-red-500 font-bold border border-red-200 flex justify-center items-center gap-1">
+                                <i class="fa-solid fa-file-invoice"></i> 欠收據(已收錢)
+                            </button>
+                            <button type="button" onclick="setStatus('no_payment')" id="btn-status-payment" class="status-btn flex-1 p-2 rounded-lg bg-orange-50 text-orange-500 font-bold border border-orange-200 flex justify-center items-center gap-1">
+                                <i class="fa-solid fa-sack-dollar"></i> 欠匯款(已給單)
+                            </button>
+                         </div>
+                         <input type="hidden" id="inputStatus" value="completed">
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wider">備註</label>
+                        <textarea id="inputNote" rows="1" placeholder="其他..." class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-gray-400 outline-none h-[54px] transition-colors"></textarea>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2 mt-2">
+                        <button onclick="addToPending()" class="w-full py-4 rounded-xl text-lg font-bold bg-gray-200 text-gray-600 shadow active:scale-95 transition-all flex justify-center items-center">
+                            <i class="fa-solid fa-list-check mr-2"></i> 加入清單
+                        </button>
+                        <button onclick="addRecord()" class="w-full btn-primary py-4 rounded-xl text-lg font-bold shadow-lg shadow-gray-300 flex justify-center items-center gap-2 transition-all active:scale-95" id="addBtn">
+                            <i class="fa-solid fa-check mr-2"></i> 直接收款
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="pendingContainer" class="hidden mb-6">
+                <div class="flex justify-between items-end mb-3 px-1 mt-6">
+                    <h3 class="font-bold text-gray-700 uppercase text-sm tracking-wider flex items-center gap-1">
+                        <i class="fa-solid fa-clipboard-list text-blue-500"></i> 待收清單 (路線)
+                    </h3>
+                    <span class="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded-full" id="pendingCount">0</span>
+                </div>
+                <div id="pendingList" class="space-y-2">
+                    </div>
+            </div>
+
+            <div class="flex justify-between items-end mt-8 mb-3 px-1">
+                <h3 class="font-bold text-gray-500 uppercase text-sm tracking-wider flex items-center gap-1">
+                    <span id="listTitleIcon">🎠</span> <span id="listTitleName">子晴</span> 的最近紀錄
+                </h3>
+                <span class="text-xs bg-gray-200 text-gray-600 px-2 py-1 rounded-full" id="recordCount">0</span>
+            </div>
+
+            <div id="recordList" class="space-y-3 pb-24">
+                </div>
+        </div>
+
+        <div id="view-settle" class="hidden">
+            <div class="card p-6 bg-white border border-blue-100 shadow-xl">
+                <h2 class="text-xl font-bold text-blue-800 mb-6 flex items-center border-b border-blue-100 pb-3">
+                    <i class="fa-solid fa-money-bill-transfer mr-2"></i> <span id="settlePageTitle">薪水結算</span>
+                </h2>
+                
+                <div class="space-y-6">
+                    <div id="settleWarnings" class="hidden space-y-2">
+                        </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="bg-gray-50 p-3 rounded-xl border border-gray-100 text-center">
+                             <div class="text-xs text-gray-500 mb-1">現金 (持有)</div>
+                             <div class="font-bold text-gray-800 text-lg" id="settleCash">$0</div>
+                        </div>
+                        <div class="bg-blue-50 p-3 rounded-xl border border-blue-100 text-center">
+                             <div class="text-xs text-blue-600 mb-1">銀行匯款 (持有)</div>
+                             <div class="font-bold text-blue-700 text-lg" id="settleTransfer">$0</div>
+                        </div>
+                        <div class="bg-lime-50 p-3 rounded-xl border border-lime-200 text-center">
+                             <div class="text-xs text-lime-700 mb-1">LinePay (持有)</div>
+                             <div class="font-bold text-lime-800 text-lg" id="settleLinePay">$0</div>
+                        </div>
+                        <div class="bg-purple-50 p-3 rounded-xl border border-purple-200 text-center opacity-70">
+                             <div class="text-xs text-purple-700 mb-1">已匯給爸爸</div>
+                             <div class="font-bold text-purple-800 text-lg" id="settleDad">$0</div>
+                        </div>
+                    </div>
+
+                    <div class="flex justify-between items-center px-2 pt-2 border-t border-gray-100">
+                        <div>
+                            <span class="font-bold text-gray-600 block">個人總營收</span>
+                            <span class="text-[10px] text-gray-400">(含給爸爸的)</span>
+                        </div>
+                        <span class="font-bold text-2xl text-emerald-600" id="settleTotal">$0</span>
+                    </div>
+                    
+                    <div class="bg-yellow-50 p-4 rounded-xl border border-yellow-200 shadow-sm">
+                        <label class="block text-sm font-bold text-yellow-800 mb-2">
+                            <i class="fa-solid fa-user-tag mr-1"></i> 我的薪水
+                        </label>
+                        <div class="flex items-center bg-white rounded-lg px-3 border border-yellow-200">
+                            <span class="text-xl mr-2 text-gray-400">$</span>
+                            <input type="number" id="mySalary" value="0" inputmode="decimal" pattern="[0-9]*" oninput="calculateSettlement()" class="w-full py-3 text-2xl font-bold text-gray-800 text-right outline-none">
+                        </div>
+                    </div>
+                    
+                    <div class="bg-gradient-to-br from-emerald-500 to-teal-600 p-5 rounded-xl text-center shadow-lg text-white transform scale-105">
+                        <div class="text-sm text-emerald-100 mb-1 font-medium">最後給爸爸的錢</div>
+                        <div class="text-4xl font-bold tracking-tight" id="finalToDad">$0</div>
+                        <div class="text-[10px] text-emerald-200 mt-1">(現金+匯款+LinePay) - 薪水</div>
+                    </div>
+
+                    <div class="mt-8 pt-4 border-t border-gray-200">
+                        <h3 class="text-sm font-bold text-gray-400 mb-3">其他人員參考資料</h3>
+                        <div id="collectorBreakdown" class="space-y-2"></div>
+                        <div class="grid grid-cols-2 gap-3 mt-3" id="categoryBreakdown"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="view-report" class="hidden">
+            <div class="card p-4">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-lg font-bold text-gray-800" id="reportTitle">年度報表</h2>
+                     <div class="flex items-center bg-gray-100 rounded-lg overflow-hidden">
+                        <button onclick="changeReportYear(-1)" class="px-3 py-1 hover:bg-gray-200 text-gray-600"><i class="fa-solid fa-chevron-left"></i></button>
+                        <span class="px-2 font-bold text-emerald-600" id="reportYearDisplay">114年</span>
+                        <button onclick="changeReportYear(1)" class="px-3 py-1 hover:bg-gray-200 text-gray-600"><i class="fa-solid fa-chevron-right"></i></button>
+                    </div>
+                </div>
+                
+                <div class="text-xs text-gray-400 mb-2 flex gap-3">
+                    <div class="flex items-center"><span class="w-2 h-2 rounded-full bg-emerald-500 mr-1"></span> 已收</div>
+                    <div class="flex items-center"><span class="w-2 h-2 rounded-full bg-white border border-orange-400 mr-1"></span> 待處理</div>
+                    <div class="flex items-center"><span class="w-2 h-2 rounded-full bg-gray-100 border border-gray-300 mr-1"></span> 未收</div>
+                </div>
+
+                <div id="yearReportGrid" class="space-y-4">
+                    </div>
+            </div>
+        </div>
+
+        <div id="view-settings" class="hidden">
+             <div class="card p-5 border-l-4 border-blue-500 mb-4">
+                <h2 class="text-lg font-bold text-gray-800 mb-3 flex items-center">
+                    <i class="fa-solid fa-address-book text-blue-500 mr-2"></i> 常用客戶 / 路線管理
+                </h2>
+                <p class="text-xs text-gray-500 mb-4">建立後，記帳時可直接選擇。</p>
+                <div class="grid grid-cols-2 gap-2 mb-3">
+                    <button onclick="openAddCustomerModal()" class="py-2.5 bg-blue-600 text-white rounded-lg text-sm font-bold shadow active:bg-blue-700">
+                        <i class="fa-solid fa-plus mr-1"></i> 新增常用客戶
+                    </button>
+                    <button onclick="importFavoritesToPending()" class="py-2.5 bg-emerald-500 text-white rounded-lg text-sm font-bold shadow active:bg-emerald-600">
+                        <i class="fa-solid fa-route mr-1"></i> 匯入今日路線
+                    </button>
+                </div>
+                <div id="customerListSettings" class="space-y-2 max-h-60 overflow-y-auto pr-1 bg-gray-50 p-2 rounded-xl"></div>
+             </div>
+             <div class="card p-5">
+                <h2 class="text-lg font-bold text-gray-700 mb-4">資料備份與工具</h2>
+                <div class="space-y-3">
+                    <div class="p-4 bg-emerald-50 border border-emerald-100 rounded-xl text-emerald-800 text-sm">
+                        <i class="fa-solid fa-check-circle mr-2"></i> 資料庫狀態: 
+                        <span class="font-bold text-emerald-600">已連線 (公共區域)</span>
+                        <div class="text-xs text-emerald-600 mt-1 opacity-75">ID: <span id="userIdDisplay">...</span></div>
+                    </div>
+                    <button onclick="printAllRecords()" class="w-full p-4 bg-blue-50 border border-blue-200 rounded-xl text-left text-blue-700 flex justify-between items-center shadow-sm active:bg-blue-100">
+                        <span class="font-bold"><i class="fa-solid fa-print mr-3"></i> 列印總報表 (給爸爸)</span>
+                        <i class="fa-solid fa-chevron-right"></i>
+                    </button>
+                    <button onclick="exportData()" class="w-full p-4 bg-white border border-gray-200 rounded-xl text-left active:bg-gray-50 flex justify-between items-center shadow-sm">
+                        <span class="font-medium text-gray-700"><i class="fa-solid fa-download mr-3 text-blue-500 w-5"></i> 下載備份 (JSON)</span>
+                        <i class="fa-solid fa-chevron-right text-gray-300"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+    
+    <div id="printContainer"></div>
+
+    <div class="fixed bottom-0 left-0 w-full bg-white/95 backdrop-blur-md border-t border-gray-200 flex justify-around pb-safe pt-2 z-[9999] shadow-[0_-4px_20px_rgba(0,0,0,0.05)]" id="bottomNav">
+        <button onclick="toggleView('entry')" class="flex flex-col items-center w-1/4 py-2 text-emerald-600 transition-colors" id="nav-entry">
+            <div class="text-xl mb-1 relative"><i class="fa-solid fa-pen-to-square"></i></div>
+            <span class="text-[10px] font-bold">記帳</span>
+        </button>
+        <button onclick="toggleView('settle')" class="flex flex-col items-center w-1/4 py-2 text-gray-400 transition-colors" id="nav-settle">
+            <div class="text-xl mb-1"><i class="fa-solid fa-calculator"></i></div>
+            <span class="text-[10px] font-medium">結算</span>
+        </button>
+        <button onclick="toggleView('report')" class="flex flex-col items-center w-1/4 py-2 text-gray-400 transition-colors" id="nav-report">
+            <div class="text-xl mb-1"><i class="fa-solid fa-calendar-days"></i></div>
+            <span class="text-[10px] font-medium">年報</span>
+        </button>
+        <button onclick="toggleView('settings')" class="flex flex-col items-center w-1/4 py-2 text-gray-400 transition-colors" id="nav-settings">
+            <div class="text-xl mb-1"><i class="fa-solid fa-gear"></i></div>
+            <span class="text-[10px] font-medium">設定</span>
+        </button>
+    </div>
+
+    <div id="customerModal" class="modal-overlay hidden" onclick="closeCustomerSelect(event)">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <div class="flex justify-between items-center mb-4 border-b pb-2">
+                <h3 class="text-lg font-bold text-gray-800"><i class="fa-solid fa-users text-blue-500"></i> 選擇客戶 (<span id="customerModalCollector"></span>)</h3>
+                <button onclick="closeCustomerSelect(null)" class="text-gray-400 p-2 bg-gray-100 rounded-full w-8 h-8 flex items-center justify-center"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <input type="text" id="customerSearch" onkeyup="renderCustomerSelect()" placeholder="搜尋地址..." class="w-full p-3 bg-gray-50 border rounded-xl mb-3 outline-none focus:border-blue-400">
+            <div id="customerSelectList" class="space-y-2 pb-4 max-h-[50vh] overflow-y-auto"></div>
+        </div>
+    </div>
+
+    <div id="historyModal" class="modal-overlay hidden" onclick="closeHistory(event)">
+        <div class="modal-content h-[70vh] flex flex-col" onclick="event.stopPropagation()">
+            <div class="flex justify-between items-center mb-4 border-b pb-2">
+                <h3 class="text-lg font-bold text-gray-800"><i class="fa-solid fa-clock-rotate-left text-orange-500"></i> 收費紀錄</h3>
+                <button onclick="closeHistory(null)" class="text-gray-400 p-2 bg-gray-100 rounded-full w-8 h-8 flex items-center justify-center"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div id="historyTitle" class="text-sm font-bold text-gray-500 mb-2 px-1"></div>
+            <div id="historyList" class="overflow-y-auto flex-1 space-y-2"></div>
+        </div>
+    </div>
+
+    <div id="confirmCollectionModal" class="modal-overlay hidden" onclick="closeConfirmCollectionModal(event)">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <div class="flex justify-between items-center mb-4 border-b pb-2">
+                <h3 class="text-lg font-bold text-emerald-600"><i class="fa-solid fa-circle-check"></i> 確認收款日期</h3>
+                <button onclick="closeConfirmCollectionModal(null)" class="text-gray-400 p-2 bg-gray-100 rounded-full w-8 h-8 flex items-center justify-center"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="space-y-4">
+                <div class="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                    <div class="text-sm text-gray-500">項目</div>
+                    <div class="font-bold text-gray-800 text-lg" id="confirmModalAddress"></div>
+                    <div class="mt-2">
+                        <label class="text-xs text-gray-400">收費月份</label>
+                        <input type="text" id="confirmModalMonths" class="w-full p-2 border rounded font-bold text-blue-600 bg-white">
+                    </div>
+                </div>
+                <div class="flex gap-2">
+                     <div class="flex-1">
+                        <label class="block text-xs font-bold text-gray-500 mb-1">收款日期</label>
+                        <input type="date" id="confirmModalDate" class="w-full p-3 bg-white border-2 border-emerald-100 rounded-xl text-lg font-bold text-gray-700 outline-none focus:border-emerald-400">
+                     </div>
+                     <div class="flex-1">
+                        <label class="block text-xs font-bold text-gray-500 mb-1">方式</label>
+                        <select id="confirmModalType" class="w-full p-3 bg-white border-2 border-emerald-100 rounded-xl text-lg h-[54px] focus:border-emerald-400 outline-none">
+                            <option value="cash">現金</option>
+                            <option value="transfer">匯款</option>
+                            <option value="linepay">LinePay</option>
+                            <option value="dad">匯給爸爸</option>
+                        </select>
+                     </div>
+                </div>
+                
+                <div>
+                     <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">特殊狀態</label>
+                     <div class="flex gap-2 mb-3">
+                        <button type="button" onclick="setModalStatus('no_receipt')" id="modal-status-receipt" class="status-btn flex-1 p-2 rounded-lg bg-red-50 text-red-500 font-bold border border-red-200 flex justify-center items-center gap-1">
+                            <i class="fa-solid fa-file-invoice"></i> 欠收據
+                        </button>
+                        <button type="button" onclick="setModalStatus('no_payment')" id="modal-status-payment" class="status-btn flex-1 p-2 rounded-lg bg-orange-50 text-orange-500 font-bold border border-orange-200 flex justify-center items-center gap-1">
+                            <i class="fa-solid fa-sack-dollar"></i> 欠匯款
+                        </button>
+                     </div>
+                     <input type="hidden" id="modalInputStatus" value="completed">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">備註</label>
+                    <textarea id="confirmModalNote" rows="1" placeholder="填寫備註..." class="w-full p-3 bg-white border border-gray-200 rounded-xl focus:border-emerald-400 outline-none"></textarea>
+                </div>
+
+                <div class="text-center">
+                    <span class="text-xs text-gray-400">金額</span>
+                    <div class="text-2xl font-bold text-emerald-600" id="confirmModalAmount"></div>
+                </div>
+                <button id="confirmCollectionBtn" class="w-full py-4 bg-emerald-500 text-white rounded-xl text-xl font-bold shadow-lg shadow-emerald-200 active:scale-95 transition-all">確認收款</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="reportActionModal" class="modal-overlay hidden" onclick="closeReportActionModal(event)">
+        <div class="modal-content" onclick="event.stopPropagation()">
+             <div class="flex justify-between items-center mb-4 border-b pb-2">
+                <h3 class="text-lg font-bold text-gray-800" id="reportActionTitle">編輯紀錄</h3>
+                <button onclick="closeReportActionModal(null)" class="text-gray-400"><i class="fa-solid fa-times"></i></button>
+            </div>
+            
+            <div id="reportActionContent" class="space-y-4">
+                </div>
+        </div>
+    </div>
+
+    <div id="monthPickerModal" class="modal-overlay hidden" onclick="closeMonthPickerModal(event)">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="font-bold text-gray-700 flex items-center gap-2">選擇月份 (<span id="modalYearDisplay">114年</span>)</h3>
+                <button onclick="closeMonthPickerModal(null)" class="text-gray-400"><i class="fa-solid fa-times"></i></button>
+            </div>
+            <div class="flex items-center justify-center bg-gray-50 rounded-lg p-2 mb-4">
+                <button onclick="changeModalYear(-1)" class="p-2 text-gray-500 hover:bg-gray-200 rounded-lg"><i class="fa-solid fa-chevron-left"></i></button>
+                <span class="mx-4 font-bold text-lg text-emerald-600" id="modalYearDisplaySpan">114年</span>
+                <button onclick="changeModalYear(1)" class="p-2 text-gray-500 hover:bg-gray-200 rounded-lg"><i class="fa-solid fa-chevron-right"></i></button>
+            </div>
+            <div class="grid grid-cols-4 gap-3 mb-4" id="modalMonthGrid"></div>
+            <button onclick="applyModalMonths()" class="w-full btn-primary py-3 rounded-xl font-bold">確定</button>
+        </div>
+    </div>
+
+    <div id="addCustomerModal" class="modal-overlay hidden" onclick="closeAddCustomerModal(event)">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <div class="flex justify-between items-center mb-4 border-b pb-2">
+                <h3 class="text-lg font-bold text-gray-800" id="customerModalTitle"><i class="fa-solid fa-user-plus text-green-600"></i> 新增常用客戶</h3>
+                <button onclick="closeAddCustomerModal(null)" class="text-gray-400 p-2 bg-gray-100 rounded-full w-8 h-8 flex items-center justify-center"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 mb-1">預設項目</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button type="button" onclick="setEditCustCategory('stairs')" id="edit-cat-stairs" class="p-2 rounded border text-sm font-bold bg-orange-100 text-orange-800 border-orange-200">🪜 洗樓梯</button>
+                        <button type="button" onclick="setEditCustCategory('tank')" id="edit-cat-tank" class="p-2 rounded border text-sm font-bold bg-gray-50 text-gray-400 border-gray-200">💧 洗水塔</button>
+                    </div>
+                    <input type="hidden" id="editCustCategory" value="stairs">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 mb-1">地址 / 名稱 (必填)</label>
+                    <input type="text" id="newCustAddr" placeholder="例如：錦州街" class="w-full p-3 bg-gray-50 border rounded-xl outline-none focus:border-green-500 text-lg">
+                </div>
+                <div class="flex gap-2">
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold text-gray-500 mb-1">金額 (必填)</label>
+                        <input type="number" id="newCustAmt" placeholder="16000" inputmode="decimal" class="w-full p-3 bg-gray-50 border rounded-xl outline-none focus:border-green-500 font-bold text-emerald-600 text-lg">
+                    </div>
+                    <div class="w-24">
+                        <label class="block text-xs font-bold text-gray-500 mb-1">樓層 (可不填)</label>
+                        <input type="text" id="newCustFloor" placeholder="不固定" class="w-full p-3 bg-gray-50 border rounded-xl outline-none focus:border-green-500 text-center text-lg">
+                    </div>
+                </div>
+                <button onclick="saveCustomer()" class="w-full py-3 bg-green-600 text-white rounded-xl font-bold mt-2 shadow text-lg">儲存</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="app.js"></script>
+
 </body>
 </html>
