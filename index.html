@@ -78,9 +78,20 @@
                 </div>
                 
                 <div class="space-y-4">
-                    <div class="hidden">
-                        <input type="date" id="inputDate">
-                    </div>
+                 <div class="flex gap-2 mb-3">
+    <div class="flex-1">
+        <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">
+            <i class="fa-regular fa-calendar mr-1"></i> 收款日期
+        </label>
+        <input type="date" id="inputDate" class="w-full p-3 bg-white border border-gray-200 rounded-xl text-lg font-bold text-gray-700 outline-none focus:border-emerald-400 shadow-sm">
+    </div>
+    <div class="flex-1">
+        <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">
+            <i class="fa-solid fa-soap mr-1"></i> 施作日期(選)
+        </label>
+        <input type="date" id="inputServiceDate" class="w-full p-3 bg-white border border-gray-200 rounded-xl text-lg font-bold text-gray-700 outline-none focus:border-cyan-400 shadow-sm">
+    </div>
+</div>
 
                     <div>
                         <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">服務項目</label>
