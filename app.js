@@ -995,6 +995,13 @@ window.renderRecords = function() {
         let sTag = '';
         if(record.category === 'tank') sTag = `<span class="text-xs font-bold px-2 py-0.5 rounded-full tag-tank flex items-center gap-1">💧 洗水塔</span>`;
         else sTag = `<span class="text-xs font-bold px-2 py-0.5 rounded-full tag-stairs flex items-center gap-1">🪜 洗樓梯</span>`;
+        // 新增：如果有填寫施作日期，就顯示出來
+let serviceTag = '';
+if(record.serviceDate) {
+    const sDate = new Date(record.serviceDate);
+    const sDateStr = `${sDate.getMonth()+1}/${sDate.getDate()}`;
+    serviceTag = `<span class="text-xs font-bold px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-700 flex items-center gap-1 ml-1"><i class="fa-solid fa-soap"></i> 洗:${sDateStr}</span>`;
+}
 
         let statusHtml = '';
         if(record.status === 'no_receipt') {
@@ -1020,6 +1027,8 @@ window.renderRecords = function() {
                 <div class="flex-1 mr-2">
                     <div class="flex items-center gap-2 mb-1 flex-wrap">
                         <span class="text-xs font-bold text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">${displayDate}</span>
+${sTag}
+${serviceTag}
                         ${sTag}
                         <span class="text-xs font-bold px-2 py-0.5 rounded-full ${tagClass} flex items-center gap-1">
                             ${tagText}
