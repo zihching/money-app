@@ -381,21 +381,25 @@
                         <input type="text" id="confirmModalMonths" class="w-full p-2 border rounded font-bold text-blue-600 bg-white">
                     </div>
                 </div>
-                <div class="flex gap-2">
-                     <div class="flex-1">
-                        <label class="block text-xs font-bold text-gray-500 mb-1">收款日期</label>
-                        <input type="date" id="confirmModalDate" class="w-full p-3 bg-white border-2 border-emerald-100 rounded-xl text-lg font-bold text-gray-700 outline-none focus:border-emerald-400">
-                     </div>
-                     <div class="flex-1">
-                        <label class="block text-xs font-bold text-gray-500 mb-1">方式</label>
-                        <select id="confirmModalType" class="w-full p-3 bg-white border-2 border-emerald-100 rounded-xl text-lg h-[54px] focus:border-emerald-400 outline-none">
-                            <option value="cash">現金</option>
-                            <option value="transfer">匯款</option>
-                            <option value="linepay">LinePay</option>
-                            <option value="dad">匯給爸爸</option>
-                        </select>
-                     </div>
-                </div>
+                <div class="grid grid-cols-2 gap-2">
+     <div>
+        <label class="block text-xs font-bold text-gray-500 mb-1">收款日期</label>
+        <input type="date" id="confirmModalDate" class="w-full p-3 bg-white border-2 border-emerald-100 rounded-xl text-lg font-bold text-gray-700 outline-none focus:border-emerald-400">
+     </div>
+     <div>
+        <label class="block text-xs font-bold text-gray-500 mb-1">施作日期(選)</label>
+        <input type="date" id="confirmModalServiceDate" class="w-full p-3 bg-white border-2 border-gray-100 rounded-xl text-lg font-bold text-gray-500 outline-none focus:border-cyan-400">
+     </div>
+     <div class="col-span-2">
+        <label class="block text-xs font-bold text-gray-500 mb-1">方式</label>
+        <select id="confirmModalType" class="w-full p-3 bg-white border-2 border-emerald-100 rounded-xl text-lg h-[54px] focus:border-emerald-400 outline-none">
+            <option value="cash">現金</option>
+            <option value="transfer">匯款</option>
+            <option value="linepay">LinePay</option>
+            <option value="dad">匯給爸爸</option>
+        </select>
+     </div>
+</div>
                 
                 <div>
                      <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">特殊狀態</label>
