@@ -152,7 +152,7 @@ window.deletePending = async function(docId) {
 
 function getFormData() {
     const dateInput = document.getElementById('inputDate').value;
-    const serviceDate = document.getElementById('inputServiceDate').value; // 新增：讀取施作日期
+    const serviceDate = document.getElementById('inputServiceDate').value;
     
     const address = document.getElementById('inputAddress').value.trim();
     const floor = document.getElementById('inputFloor').value.trim();
@@ -206,7 +206,6 @@ window.renderPendingList = function() {
         const typeId = `p-type-${item.id}`;
         const catIcon = item.category === 'tank' ? '<span class="text-cyan-600">💧</span>' : '<span class="text-orange-600">🪜</span>';
         
-        // 顯示施作日期標籤
         let sTag = '';
         if(item.serviceDate) {
             sTag = `<span class="text-xs bg-cyan-100 text-cyan-700 px-1 rounded ml-1 font-bold">洗:${item.serviceDate.slice(5)}</span>`;
@@ -277,7 +276,6 @@ window.renderRecords = function() {
         if(record.category === 'tank') sTag = `<span class="text-xs font-bold px-2 py-0.5 rounded-full tag-tank flex items-center gap-1">💧 洗水塔</span>`;
         else sTag = `<span class="text-xs font-bold px-2 py-0.5 rounded-full tag-stairs flex items-center gap-1">🪜 洗樓梯</span>`;
 
-        // 顯示施作日期標籤 (紀錄列表)
         let serviceTag = '';
         if(record.serviceDate) {
             const sDate = new Date(record.serviceDate);
@@ -315,7 +313,7 @@ window.renderRecords = function() {
     });
 };
 
-// --- MODAL LOGIC (UPDATED) ---
+// --- MODAL LOGIC ---
 
 window.openConfirmCollectionModal = function(id, amount, address, category, serviceDate) {
     const floor = document.getElementById(`p-floor-${id}`).value;
@@ -350,7 +348,7 @@ window.doConfirmCollection = function() {
     if(!action) return;
 
     const date = document.getElementById('confirmModalDate').value;
-    const serviceDate = document.getElementById('confirmModalServiceDate').value; // 讀取
+    const serviceDate = document.getElementById('confirmModalServiceDate').value; 
     const months = document.getElementById('confirmModalMonths').value; 
     const type = document.getElementById('confirmModalType').value; 
     const status = document.getElementById('modalInputStatus').value;
@@ -374,6 +372,116 @@ window.doConfirmCollection = function() {
     closeConfirmCollectionModal(null);
 };
 
+// --- REPORT LOGIC (NEW: CATEGORY FILTER) ---
+
+window.setReportCategory = function(cat) {
+    window.appState.reportCategory = cat;
+    // UI Update
+    const btns = { 'all': 'rep-cat-all', 'stairs': 'rep-cat-stairs', 'tank': 'rep-cat-tank' };
+    Object.values(btns).forEach(id => {
+        const el = document.getElementById(id);
+        el.className = "flex-1 py-1.5 rounded-md text-sm font-bold text-gray-400 hover:bg-white hover:shadow-sm transition-all border border-transparent";
+    });
+    const active = document.getElementById(btns[cat]);
+    active.className = "flex-1 py-1.5 rounded-md text-sm font-bold bg-white text-gray-800 shadow-sm transition-all border border-gray-200";
+    
+    window.renderYearlyReport();
+};
+
+window.changeReportYear = function(delta) { 
+    window.appState.reportYear += delta; 
+    document.getElementById('reportYearDisplay').innerText = `${window.appState.reportYear}年`; 
+    window.renderYearlyReport(); 
+};
+
+window.renderYearlyReport = function() { 
+    const container = document.getElementById('yearReportGrid'); 
+    container.innerHTML = ''; 
+    const year = window.appState.reportYear; 
+    const current = window.appState.currentCollector; 
+    const catFilter = window.appState.reportCategory || 'all'; // 'all', 'stairs', 'tank'
+
+    // 1. Filter Records based on Category
+    let records = window.appState.records.filter(r => {
+        const rCol = r.collector || '子晴';
+        if(rCol !== current) return false;
+        if(catFilter !== 'all' && (r.category || 'stairs') !== catFilter) return false;
+        return true;
+    });
+
+    // 2. Filter Customers based on Category (Default)
+    const custs = window.appState.customers.filter(c => {
+        if(!((c.collector === current) || (!c.collector && current === '子晴'))) return false;
+        if(catFilter !== 'all' && (c.category || 'stairs') !== catFilter) return false;
+        return true;
+    });
+
+    const addressSet = new Set();
+    custs.forEach(c => addressSet.add(c.address)); 
+    records.forEach(r => addressSet.add(r.address)); 
+
+    const addresses = Array.from(addressSet).sort(); 
+
+    if(addresses.length === 0) { 
+        container.innerHTML = '<div class="text-center text-gray-400 py-10">尚無資料</div>'; 
+        return; 
+    } 
+
+    addresses.forEach(addr => { 
+        const monthInfo = Array(13).fill(null); 
+        const addrRecords = window.appState.records.filter(r => r.address === addr); 
+        
+        addrRecords.forEach(r => { 
+            // If checking specific category, ignore records of other category
+            if(catFilter !== 'all' && (r.category || 'stairs') !== catFilter) return;
+
+            const d = new Date(r.date); 
+            const collectDate = (d instanceof Date && !isNaN(d)) ? `${d.getMonth()+1}/${d.getDate()}` : '??'; 
+            
+            if (r.months && r.months.includes(`${year}年`)) { 
+                const parts = r.months.match(new RegExp(`${year}年\\s*([0-9,]+)`)); 
+                if(parts && parts[1]) { 
+                    const paidMonths = parts[1].split(',').map(Number); 
+                    paidMonths.forEach(m => { 
+                        if(m >= 1 && m <= 12) { 
+                            let status = 'paid'; 
+                            if(r.status === 'no_payment' || r.status === 'no_receipt') { status = 'warning'; } 
+                            monthInfo[m] = { status: status, date: collectDate, id: r.id, amount: r.amount, fullDate: r.date }; 
+                        } 
+                    }); 
+                } 
+            } 
+        }); 
+
+        const card = document.createElement('div'); 
+        card.className = 'bg-white p-3 rounded-lg border border-gray-100 shadow-sm'; 
+        
+        let monthHtml = ''; 
+        for(let m=1; m<=12; m++) { 
+            const info = monthInfo[m]; 
+            let className = 'year-dot flex flex-col justify-center leading-none'; 
+            let content = m; 
+            let onclick = `openReportAction('${addr}', ${year}, ${m}, null)`; 
+            if(info) { 
+                onclick = `openReportAction('${addr}', ${year}, ${m}, '${info.id}', '${info.fullDate}', ${info.amount})`; 
+                if(info.status === 'paid') { 
+                    className += ' paid'; 
+                    content = `<span class="text-[8px] opacity-75">${m}月</span><span class="text-[10px]">${info.date}</span>`; 
+                } else if (info.status === 'warning') { 
+                    className += ' warning'; 
+                    content = `<span class="text-[8px] opacity-75">${m}月</span><span class="text-[10px]">${info.date}</span>`; 
+                } 
+            } else { 
+                content = `<span class="text-xs">${m}</span>`; 
+            } 
+            monthHtml += `<div class="${className}" style="height: 36px;" onclick="${onclick}">${content}</div>`; 
+        } 
+        
+        card.innerHTML = ` <div class="font-bold text-gray-700 mb-2 border-b pb-1 text-sm flex justify-between"> <span>${addr}</span> <span class="text-xs text-gray-300 font-normal">#${year}</span> </div> <div class="grid grid-cols-6 gap-2"> ${monthHtml} </div> `; 
+        container.appendChild(card); 
+    }); 
+};
+
 // --- INIT STATE ---
 window.appState = { 
     records: [], customers: [], pending: [], 
@@ -386,6 +494,7 @@ window.appState = {
     pickerYear: 114, 
     modalPickerYear: 114,
     reportYear: 114, 
+    reportCategory: 'all', // New state for filtering report
     pendingMonthTargetId: null,
     currentView: 'entry'
 };
@@ -405,13 +514,7 @@ window.onload = function() {
     window.renderMonthPicker();
 };
 
-// ... (Rest of boilerplate functions for MonthPicker, YearReport, etc. are implicitly included via full paste) ...
-// 為了保持長度合理，以下省略未修改的輔助函數，但你全選貼上時請確保 app.js 是完整的。
-// 建議: 直接複製我上方提供的 100% 完整 app.js 代碼區塊。
-
-// (這裡補上完整的輔助函數，避免你複製出錯)
-window.changeReportYear = function(delta) { window.appState.reportYear += delta; document.getElementById('reportYearDisplay').innerText = `${window.appState.reportYear}年`; window.renderYearlyReport(); };
-window.renderYearlyReport = function() { /* ...同前... */ const container = document.getElementById('yearReportGrid'); container.innerHTML = ''; const year = window.appState.reportYear; const current = window.appState.currentCollector; const addressSet = new Set(); window.appState.customers.filter(c => (c.collector === current) || (!c.collector && current === '子晴')).forEach(c => addressSet.add(c.address)); window.appState.records.filter(r => { const rCol = r.collector || '子晴'; return rCol === current; }).forEach(r => addressSet.add(r.address)); const addresses = Array.from(addressSet).sort(); if(addresses.length === 0) { container.innerHTML = '<div class="text-center text-gray-400 py-10">尚無資料</div>'; return; } addresses.forEach(addr => { const monthInfo = Array(13).fill(null); const addrRecords = window.appState.records.filter(r => r.address === addr); addrRecords.forEach(r => { const d = new Date(r.date); const collectDate = (d instanceof Date && !isNaN(d)) ? `${d.getMonth()+1}/${d.getDate()}` : '??'; if (r.months && r.months.includes(`${year}年`)) { const parts = r.months.match(new RegExp(`${year}年\\s*([0-9,]+)`)); if(parts && parts[1]) { const paidMonths = parts[1].split(',').map(Number); paidMonths.forEach(m => { if(m >= 1 && m <= 12) { let status = 'paid'; if(r.status === 'no_payment' || r.status === 'no_receipt') { status = 'warning'; } monthInfo[m] = { status: status, date: collectDate, id: r.id, amount: r.amount, fullDate: r.date }; } }); } } }); const card = document.createElement('div'); card.className = 'bg-white p-3 rounded-lg border border-gray-100 shadow-sm'; let monthHtml = ''; for(let m=1; m<=12; m++) { const info = monthInfo[m]; let className = 'year-dot flex flex-col justify-center leading-none'; let content = m; let onclick = `openReportAction('${addr}', ${year}, ${m}, null)`; if(info) { onclick = `openReportAction('${addr}', ${year}, ${m}, '${info.id}', '${info.fullDate}', ${info.amount})`; if(info.status === 'paid') { className += ' paid'; content = `<span class="text-[8px] opacity-75">${m}月</span><span class="text-[10px]">${info.date}</span>`; } else if (info.status === 'warning') { className += ' warning'; content = `<span class="text-[8px] opacity-75">${m}月</span><span class="text-[10px]">${info.date}</span>`; } } else { content = `<span class="text-xs">${m}</span>`; } monthHtml += `<div class="${className}" style="height: 36px;" onclick="${onclick}">${content}</div>`; } card.innerHTML = ` <div class="font-bold text-gray-700 mb-2 border-b pb-1 text-sm flex justify-between"> <span>${addr}</span> <span class="text-xs text-gray-300 font-normal">#${year}</span> </div> <div class="grid grid-cols-6 gap-2"> ${monthHtml} </div> `; container.appendChild(card); }); };
+// (Keeping helper functions compact)
 window.openReportAction = function(address, year, month, recordId, date, amount) { const title = document.getElementById('reportActionTitle'); const content = document.getElementById('reportActionContent'); if(recordId) { title.innerText = `編輯紀錄：${address} (${month}月)`; content.innerHTML = ` <div> <label class="block text-xs text-gray-500 mb-1">收款日期</label> <input type="date" id="reportEditDate" value="${date}" class="w-full p-2 border rounded"> </div> <div> <label class="block text-xs text-gray-500 mb-1">金額</label> <input type="number" id="reportEditAmount" value="${amount}" class="w-full p-2 border rounded"> </div> <div class="grid grid-cols-2 gap-2 mt-4"> <button onclick="deleteReportRecord('${recordId}')" class="py-2 bg-red-100 text-red-600 rounded-lg font-bold">刪除紀錄</button> <button onclick="updateReportRecord('${recordId}', document.getElementById('reportEditDate').value, document.getElementById('reportEditAmount').value)" class="py-2 bg-blue-600 text-white rounded-lg font-bold">儲存修改</button> </div> `; } else { const cust = window.appState.customers.find(c => c.address === address); const defAmount = cust ? cust.amount : ''; const today = new Date().toISOString().split('T')[0]; title.innerText = `補登紀錄：${address} (${month}月)`; content.innerHTML = ` <div class="text-sm text-gray-500 mb-2">確定要補登 <strong>${year}年${month}月</strong> 的收款嗎？</div> <div> <label class="block text-xs text-gray-500 mb-1">收款日期</label> <input type="date" id="reportAddDate" value="${today}" class="w-full p-2 border rounded"> </div> <div> <label class="block text-xs text-gray-500 mb-1">金額</label> <input type="number" id="reportAddAmount" value="${defAmount}" placeholder="輸入金額" class="w-full p-2 border rounded"> </div> <button onclick="addReportRecord('${address}', ${year}, ${month}, document.getElementById('reportAddAmount').value)" class="w-full py-3 bg-emerald-500 text-white rounded-lg font-bold mt-4">確認補登</button> `; } document.getElementById('reportActionModal').classList.remove('hidden'); };
 window.closeReportActionModal = function(e) { if(e && e.target !== e.currentTarget) return; document.getElementById('reportActionModal').classList.add('hidden'); };
 window.addReportRecord = async function(address, year, month, amount) { if(!currentUser) return; const record = { date: new Date().toISOString().split('T')[0], address: address, amount: amount, floor: '', months: `${year}年 ${month}月`, note: '補登', type: 'cash', category: 'stairs', collector: window.appState.currentCollector, status: 'completed', createdAt: serverTimestamp() }; const cust = window.appState.customers.find(c => c.address === address); if(cust) { if(cust.amount) record.amount = cust.amount; if(cust.category) record.category = cust.category; if(cust.floor) record.floor = cust.floor; } try { await addDoc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'records'), record); window.closeReportActionModal(null); window.showToast("✅ 已補登"); } catch(e) { window.showToast("補登失敗"); } };
