@@ -268,6 +268,9 @@ window.importFavoritesToPending = async function() {
 
 function getFormData() {
     const dateInput = document.getElementById('inputDate').value;
+    // 新增：讀取施作日期
+    const serviceDate = document.getElementById('inputServiceDate').value;
+    
     const address = document.getElementById('inputAddress').value.trim();
     const floor = document.getElementById('inputFloor').value.trim();
     const amount = parseInt(document.getElementById('inputAmount').value);
@@ -282,7 +285,11 @@ function getFormData() {
     if (!address) { window.showToast("⚠️ 請輸入地址！"); document.getElementById('inputAddress').focus(); return null; }
     if (isNaN(amount)) { window.showToast("⚠️ 請輸入金額！"); document.getElementById('inputAmount').focus(); return null; }
 
-    return { date: dateInput, address, floor, months, amount, type, category, collector, note, status, createdAt: serverTimestamp() };
+    return { 
+        date: dateInput, 
+        serviceDate: serviceDate, // 這裡存入施作日期
+        address, floor, months, amount, type, category, collector, note, status, createdAt: serverTimestamp() 
+    };
 }
 
 function clearFormData() {
