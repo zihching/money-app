@@ -78,20 +78,21 @@
                 </div>
                 
                 <div class="space-y-4">
-                 <div class="flex gap-2 mb-3">
-    <div class="flex-1">
-        <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">
-            <i class="fa-regular fa-calendar mr-1"></i> 收款日期
-        </label>
-        <input type="date" id="inputDate" class="w-full p-3 bg-white border border-gray-200 rounded-xl text-lg font-bold text-gray-700 outline-none focus:border-emerald-400 shadow-sm">
-    </div>
-    <div class="flex-1">
-        <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">
-            <i class="fa-solid fa-soap mr-1"></i> 施作日期(選)
-        </label>
-        <input type="date" id="inputServiceDate" class="w-full p-3 bg-white border border-gray-200 rounded-xl text-lg font-bold text-gray-700 outline-none focus:border-cyan-400 shadow-sm">
-    </div>
-</div>
+                    
+                    <div class="flex gap-2 mb-3">
+                        <div class="flex-1">
+                            <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">
+                                <i class="fa-regular fa-calendar mr-1"></i> 收款日期
+                            </label>
+                            <input type="date" id="inputDate" class="w-full p-3 bg-white border border-gray-200 rounded-xl text-lg font-bold text-gray-700 outline-none focus:border-emerald-400 shadow-sm">
+                        </div>
+                        <div class="flex-1">
+                            <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">
+                                <i class="fa-solid fa-soap mr-1"></i> 施作日期(選)
+                            </label>
+                            <input type="date" id="inputServiceDate" class="w-full p-3 bg-white border border-gray-200 rounded-xl text-lg font-bold text-gray-700 outline-none focus:border-cyan-400 shadow-sm">
+                        </div>
+                    </div>
 
                     <div>
                         <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">服務項目</label>
@@ -128,8 +129,7 @@
                                 <button type="button" onclick="changeYear(1)" class="px-3 py-1 hover:bg-gray-100 text-gray-600 border-l border-gray-200 active:bg-gray-200"><i class="fa-solid fa-chevron-right"></i></button>
                             </div>
                         </div>
-                        <div class="grid grid-cols-4 gap-2" id="monthPickerGrid">
-                            </div>
+                        <div class="grid grid-cols-4 gap-2" id="monthPickerGrid"></div>
                         <input type="hidden" id="selectedMonths" value="">
                         <div class="text-right mt-1 text-xs text-blue-500 font-medium h-4" id="statusHint"></div>
                     </div>
@@ -208,8 +208,7 @@
                 </h2>
                 
                 <div class="space-y-6">
-                    <div id="settleWarnings" class="hidden space-y-2">
-                        </div>
+                    <div id="settleWarnings" class="hidden space-y-2"></div>
 
                     <div class="grid grid-cols-2 gap-3">
                         <div class="bg-gray-50 p-3 rounded-xl border border-gray-100 text-center">
@@ -280,8 +279,7 @@
                     <div class="flex items-center"><span class="w-2 h-2 rounded-full bg-gray-100 border border-gray-300 mr-1"></span> 未收</div>
                 </div>
 
-                <div id="yearReportGrid" class="space-y-4">
-                    </div>
+                <div id="yearReportGrid" class="space-y-4"></div>
             </div>
         </div>
 
@@ -381,25 +379,26 @@
                         <input type="text" id="confirmModalMonths" class="w-full p-2 border rounded font-bold text-blue-600 bg-white">
                     </div>
                 </div>
+                
                 <div class="grid grid-cols-2 gap-2">
-     <div>
-        <label class="block text-xs font-bold text-gray-500 mb-1">收款日期</label>
-        <input type="date" id="confirmModalDate" class="w-full p-3 bg-white border-2 border-emerald-100 rounded-xl text-lg font-bold text-gray-700 outline-none focus:border-emerald-400">
-     </div>
-     <div>
-        <label class="block text-xs font-bold text-gray-500 mb-1">施作日期(選)</label>
-        <input type="date" id="confirmModalServiceDate" class="w-full p-3 bg-white border-2 border-gray-100 rounded-xl text-lg font-bold text-gray-500 outline-none focus:border-cyan-400">
-     </div>
-     <div class="col-span-2">
-        <label class="block text-xs font-bold text-gray-500 mb-1">方式</label>
-        <select id="confirmModalType" class="w-full p-3 bg-white border-2 border-emerald-100 rounded-xl text-lg h-[54px] focus:border-emerald-400 outline-none">
-            <option value="cash">現金</option>
-            <option value="transfer">匯款</option>
-            <option value="linepay">LinePay</option>
-            <option value="dad">匯給爸爸</option>
-        </select>
-     </div>
-</div>
+                     <div>
+                        <label class="block text-xs font-bold text-gray-500 mb-1">收款日期</label>
+                        <input type="date" id="confirmModalDate" class="w-full p-3 bg-white border-2 border-emerald-100 rounded-xl text-lg font-bold text-gray-700 outline-none focus:border-emerald-400">
+                     </div>
+                     <div>
+                        <label class="block text-xs font-bold text-gray-500 mb-1">施作日期(選)</label>
+                        <input type="date" id="confirmModalServiceDate" class="w-full p-3 bg-white border-2 border-gray-100 rounded-xl text-lg font-bold text-gray-500 outline-none focus:border-cyan-400">
+                     </div>
+                     <div class="col-span-2">
+                        <label class="block text-xs font-bold text-gray-500 mb-1">方式</label>
+                        <select id="confirmModalType" class="w-full p-3 bg-white border-2 border-emerald-100 rounded-xl text-lg h-[54px] focus:border-emerald-400 outline-none">
+                            <option value="cash">現金</option>
+                            <option value="transfer">匯款</option>
+                            <option value="linepay">LinePay</option>
+                            <option value="dad">匯給爸爸</option>
+                        </select>
+                     </div>
+                </div>
                 
                 <div>
                      <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">特殊狀態</label>
@@ -434,9 +433,7 @@
                 <h3 class="text-lg font-bold text-gray-800" id="reportActionTitle">編輯紀錄</h3>
                 <button onclick="closeReportActionModal(null)" class="text-gray-400"><i class="fa-solid fa-times"></i></button>
             </div>
-            
-            <div id="reportActionContent" class="space-y-4">
-                </div>
+            <div id="reportActionContent" class="space-y-4"></div>
         </div>
     </div>
 
@@ -491,6 +488,5 @@
     </div>
 
     <script type="module" src="app.js"></script>
-
 </body>
 </html>
