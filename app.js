@@ -20,7 +20,9 @@ window.appState = {
     reportCategory: 'all', 
     pendingMonthTargetId: null,
     currentView: 'entry',
-    reportBatchMonths: new Set()
+    reportBatchMonths: new Set(),
+    // 新增：修復待收清單月份選擇用的暫存
+    tempModalSet: new Set()
 };
 
 // --- 2. Firebase 設定 ---
@@ -91,6 +93,7 @@ function setupListeners() {
     onSnapshot(qCust, (snapshot) => {
         let custs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         custs.sort((a, b) => (a.order || 0) - (b.order || 0));
+        
         window.appState.customers = custs;
         if(window.appState.currentView === 'settings') window.renderCustomerSettings();
         if(!document.getElementById('customerModal').classList.contains('hidden')) window.renderCustomerSelect();
@@ -178,20 +181,18 @@ window.saveNewOrder = async function() {
     if(hasUpdates) { try { await batch.commit(); } catch(e) { console.error("Order update failed", e); window.showToast("排序儲存失敗"); } }
 };
 
-// 更新：快速新增 (含日期)
 window.managerAddCustomer = async function() {
     if(!currentUser) return;
     const addr = document.getElementById('mgrNewAddr').value.trim();
     const amt = parseInt(document.getElementById('mgrNewAmt').value);
-    const sDate = document.getElementById('mgrNewServiceDate').value; // 讀取日期
+    const sDate = document.getElementById('mgrNewServiceDate').value;
     const cat = window.appState.reportCategory === 'all' ? 'stairs' : window.appState.reportCategory;
     if(!addr || isNaN(amt)) { alert("請輸入地址和金額"); return; }
     let maxOrder = 0;
     window.appState.customers.forEach(c => { if(c.order && c.order > maxOrder) maxOrder = c.order; });
     const data = {
         address: addr, amount: amt, category: cat, collector: window.appState.currentCollector,
-        createdAt: serverTimestamp(), order: maxOrder + 1,
-        serviceDate: sDate || '' // 存入日期
+        createdAt: serverTimestamp(), order: maxOrder + 1, serviceDate: sDate || ''
     };
     try {
         await addDoc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'customers'), data);
@@ -202,46 +203,30 @@ window.managerAddCustomer = async function() {
     } catch(e) { window.showToast("新增失敗"); }
 };
 
-// 更新：詳細新增 (含日期)
 window.saveCustomer = async function() {
     if(!currentUser) return;
     const addr = document.getElementById('newCustAddr').value.trim();
     const amt = parseInt(document.getElementById('newCustAmt').value);
     const floor = document.getElementById('newCustFloor').value.trim();
-    const sDate = document.getElementById('newCustServiceDate').value; // 讀取日期
+    const sDate = document.getElementById('newCustServiceDate').value;
     const cat = document.getElementById('editCustCategory').value;
     const id = window.appState.editingCustomerId;
-
     if(!addr || isNaN(amt)) { alert("請填寫地址和金額"); return; }
-
-    const data = { 
-        address: addr, amount: amt, floor: floor, category: cat, 
-        collector: window.appState.currentCollector,
-        serviceDate: sDate || '' // 存入日期
-    };
-
+    const data = { address: addr, amount: amt, floor: floor, category: cat, collector: window.appState.currentCollector, serviceDate: sDate || '' };
     try {
-        if(id) {
-            await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'customers', id), data);
-            window.showToast("已更新");
-        } else {
-            data.createdAt = serverTimestamp();
-            data.order = Date.now();
-            await addDoc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'customers'), data);
-            window.showToast("已儲存");
-        }
+        if(id) { await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'customers', id), data); window.showToast("已更新"); } 
+        else { data.createdAt = serverTimestamp(); data.order = Date.now(); await addDoc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'customers'), data); window.showToast("已儲存"); }
         closeAddCustomerModal(null);
     } catch(e) { window.showToast("儲存失敗"); }
 };
 
-// 更新：開啟編輯時帶入日期
 window.openEditCustomerModal = function(id, addr, amt, floor, cat, serviceDate) {
     window.appState.editingCustomerId = id;
     document.getElementById('customerModalTitle').innerText = '編輯常用客戶';
     document.getElementById('newCustAddr').value = addr;
     document.getElementById('newCustAmt').value = amt;
     document.getElementById('newCustFloor').value = floor || '';
-    document.getElementById('newCustServiceDate').value = serviceDate || ''; // 帶入日期
+    document.getElementById('newCustServiceDate').value = serviceDate || '';
     window.setEditCustCategory(cat || 'stairs');
     document.getElementById('addCustomerModal').classList.remove('hidden');
 };
@@ -453,16 +438,13 @@ window.renderYearlyReport = function() {
             if(info) { 
                 const safeNote = (info.note || '').replace(/'/g, "\\'");
                 onclick = `openReportAction('edit', '${addr}', ${year}, ${m}, '${info.id}', '${info.fullDate}', ${info.amount}, '${info.type}', '${info.floor}', '${safeNote}')`; 
-                
                 let typeText = '💵 現金'; let typeBg = 'bg-emerald-50 text-emerald-700';
                 if(info.type === 'transfer') { typeText = '🏦 匯款'; typeBg = 'bg-blue-50 text-blue-700'; }
                 if(info.type === 'linepay') { typeText = '🟢 LP'; typeBg = 'bg-lime-50 text-lime-700'; }
                 if(info.type === 'dad') { typeText = '👴 匯爸'; typeBg = 'bg-purple-50 text-purple-700'; }
                 let borderClass = 'border-emerald-200 bg-white';
                 if(info.status === 'warning') borderClass = 'border-orange-300 bg-orange-50';
-                
                 let noteIcon = info.note ? `<i class="fa-solid fa-note-sticky text-yellow-500 text-[10px] ml-1"></i>` : '';
-
                 boxClass = `border ${borderClass} rounded p-2 flex flex-col justify-between min-h-[70px] relative shadow-sm cursor-pointer active:scale-95`;
                 content = `<div class="flex justify-between items-start mb-1"><span class="text-xs font-bold text-gray-400 flex items-center">${m}月${noteIcon}</span><span class="text-[10px] px-1 rounded ${typeBg}">${typeText}</span></div><div class="flex justify-between items-end"><div><div class="text-[10px] text-gray-500">${info.date}收</div><div class="text-xs font-bold text-gray-700">${info.floor ? info.floor : ''}</div></div><div class="font-bold text-emerald-600 text-sm">$${info.amount}</div></div>`;
             } 
@@ -472,6 +454,8 @@ window.renderYearlyReport = function() {
         container.appendChild(card); 
     }); 
 };
+
+// --- Modal Functions (Batch Add & Edit) ---
 
 window.openReportAction = function(mode, address, year, month, recordId, date, amount, type, floor, note) { 
     const title = document.getElementById('reportActionTitle'); 
@@ -574,9 +558,88 @@ window.updateSelectedMonthsInput = function() { const groups = {}; window.appSta
 window.resetMonthPicker = function() { window.appState.selectedMonthsSet.clear(); document.querySelectorAll('.month-btn').forEach(b => { b.classList.remove('selected', 'paid'); b.removeAttribute('data-date'); }); window.updateSelectedMonthsInput(); window.appState.currentBaseAmount = 0; };
 let checkTimeout; window.debounceCheckPaidStatus = function(address) { clearTimeout(checkTimeout); checkTimeout = setTimeout(() => { window.checkPaidStatus(address); }, 500); };
 window.checkPaidStatus = function(address) { document.querySelectorAll('.month-btn').forEach(b => { b.classList.remove('paid'); b.removeAttribute('data-date'); }); if(!address) return; const records = window.appState.records.filter(r => r.address === address); const paidMap = new Map(); const regex = /(\d+)年\s*([0-9,]+)/g; records.forEach(r => { if(r.months) { const d = new Date(r.date); const dateStr = `${d.getMonth()+1}/${d.getDate()}`; let match; const localRegex = new RegExp(regex); while ((match = localRegex.exec(r.months)) !== null) { const y = parseInt(match[1]); const ms = match[2].split(',').map(Number); ms.forEach(m => paidMap.set(`${y}-${m}`, dateStr)); } } }); const currentPickerYear = window.appState.pickerYear; for(let m=1; m<=12; m++) { const key = `${currentPickerYear}-${m}`; if(paidMap.has(key)) { const btn = document.getElementById(`mbtn-${m}`); if(btn) { btn.classList.add('paid'); btn.setAttribute('data-date', paidMap.get(key)); if(window.appState.selectedMonthsSet.has(key)) { window.appState.selectedMonthsSet.delete(key); btn.classList.remove('selected'); } } } } window.updateSelectedMonthsInput(); const cust = window.appState.customers.find(c => c.address === address); if(cust) { window.appState.currentBaseAmount = cust.amount; if(cust.floor) document.getElementById('inputFloor').value = cust.floor; if(cust.category) window.setServiceCategory(cust.category); } else { window.appState.currentBaseAmount = 0; } };
+
+// --- 待收清單專用 Modal 邏輯 (復原) ---
+window.openPendingMonthPicker = function(itemId, currentStr) { 
+    window.appState.pendingMonthTargetId = itemId; 
+    window.appState.modalPickerYear = 114; 
+    window.appState.tempModalSet = new Set(); 
+    // 解析原本的月份字串 (e.g. "114年 1月, 114年 2月")
+    const regex = /(\d+)年\s*([0-9,]+)/g; 
+    let match; 
+    while ((match = regex.exec(currentStr)) !== null) { 
+        const y = parseInt(match[1]); 
+        const ms = match[2].split(',').map(Number); 
+        ms.forEach(m => window.appState.tempModalSet.add(`${y}-${m}`)); 
+    } 
+    renderModalMonthGrid(); 
+    document.getElementById('monthPickerModal').classList.remove('hidden'); 
+};
+
+window.changeModalYear = function(delta) { 
+    window.appState.modalPickerYear += delta; 
+    renderModalMonthGrid(); 
+};
+
+function renderModalMonthGrid() { 
+    const y = window.appState.modalPickerYear; 
+    document.getElementById('modalYearDisplay').innerText = `${y}年`; 
+    document.getElementById('modalYearDisplaySpan').innerText = `${y}年`; 
+    const grid = document.getElementById('modalMonthGrid'); 
+    grid.innerHTML = ''; 
+    for(let i=1; i<=12; i++) { 
+        const key = `${y}-${i}`; 
+        const btn = document.createElement('button'); 
+        const isSelected = window.appState.tempModalSet.has(key); 
+        btn.className = `month-btn ${isSelected ? 'selected' : ''} p-2 rounded text-center`; 
+        btn.innerText = `${i}月`; 
+        btn.onclick = function() { 
+            if(window.appState.tempModalSet.has(key)) { 
+                window.appState.tempModalSet.delete(key); 
+                this.classList.remove('selected'); 
+            } else { 
+                window.appState.tempModalSet.add(key); 
+                this.classList.add('selected'); 
+            } 
+        }; 
+        grid.appendChild(btn); 
+    } 
+}
+
+window.closeMonthPickerModal = function(e) { 
+    if(e && e.target !== e.currentTarget) return; 
+    document.getElementById('monthPickerModal').classList.add('hidden'); 
+};
+
+window.applyModalMonths = function() { 
+    const groups = {}; 
+    window.appState.tempModalSet.forEach(key => { 
+        const [y, m] = key.split('-').map(Number); 
+        if(!groups[y]) groups[y] = []; 
+        groups[y].push(m); 
+    }); 
+    const parts = []; 
+    Object.keys(groups).sort().forEach(y => { 
+        const months = groups[y].sort((a,b)=>a-b).join(','); 
+        parts.push(`${y}年 ${months}月`); 
+    }); 
+    const targetId = window.appState.pendingMonthTargetId; 
+    if(targetId) { 
+        document.getElementById(`p-months-${targetId}`).value = parts.join(', '); 
+        // 更新資料庫 (可選，目前只更新 UI，按下勾勾時才會一起存)
+        updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'pending', targetId), { months: parts.join(', ') });
+    } 
+    closeMonthPickerModal(null); 
+};
+
 window.setCollector = function(name) { window.appState.currentCollector = name; const tabs = { '子晴': 'tab-zih-cing', '子涵': 'tab-zih-han', '宗敬': 'tab-zong-jing' }; const activeClasses = { '子晴': 'active-zih-cing', '子涵': 'active-zih-han', '宗敬': 'active-zong-jing' }; const themeColors = { '子晴': 'bg-[#c2a992]', '子涵': 'bg-[#ff99ac]', '宗敬': 'bg-sky-400' }; const btnColors = { '子晴': 'bg-[#c2a992] text-white', '子涵': 'bg-[#ff99ac] text-white', '宗敬': 'bg-sky-400 text-white' }; const qsColors = { '子晴': 'bg-[#a38e7a]', '子涵': 'bg-pink-400', '宗敬': 'bg-sky-500' }; const cardColors = { '子晴': 'border-[#e6dbd0]', '子涵': 'border-[#ffc1cc]', '宗敬': 'border-sky-300' }; const icons = { '子晴': '🎠', '子涵': '🌸', '宗敬': '☁️' }; Object.values(tabs).forEach(id => { const el = document.getElementById(id); el.classList.remove('active-zih-cing', 'active-zih-han', 'active-zong-jing', 'bg-white', 'text-gray-800'); el.classList.add('text-gray-400'); }); document.getElementById(tabs[name]).classList.add(activeClasses[name]); document.getElementById(tabs[name]).classList.remove('text-gray-400'); document.getElementById('mainHeader').className = `${themeColors[name]} text-white pt-safe sticky top-0 z-20 shadow-lg transition-colors duration-300`; document.getElementById('addBtn').className = `w-full btn-primary py-4 rounded-xl text-lg font-bold shadow-lg shadow-gray-300 flex justify-center items-center gap-2 transition-all active:scale-95 ${btnColors[name]}`; document.getElementById('quickSelectBtn').className = `${qsColors[name]} text-white text-sm px-4 py-2 rounded-lg shadow active:scale-95 flex items-center transition-all`; const card = document.getElementById('entryCard'); card.className = `card p-5 border-t-4 transition-colors duration-300 ${cardColors[name]}`; document.getElementById('listTitleName').innerText = name; document.getElementById('listTitleIcon').innerText = icons[name]; document.getElementById('settlePageTitle').innerText = `${name} 的薪水結算`; renderRecords(); renderCustomerSettings(); renderPendingList(); updateSummary(); if(window.appState.currentView === 'report') window.renderYearlyReport(); };
 window.setServiceCategory = function(cat) { window.appState.currentServiceCategory = cat; const input = document.getElementById('inputServiceType'); if(input) input.value = cat; const btnStairs = document.getElementById('btn-cat-stairs'); const btnTank = document.getElementById('btn-cat-tank'); if (btnStairs && btnTank) { btnStairs.className = 'service-btn p-3 rounded-xl bg-orange-50 text-orange-400 font-bold flex justify-center items-center gap-2 shadow-sm'; btnTank.className = 'service-btn p-3 rounded-xl bg-cyan-50 text-cyan-400 font-bold flex justify-center items-center gap-2 shadow-sm'; if(cat === 'stairs') { btnStairs.classList.add('active', 'text-orange-700', 'border-orange-200'); btnStairs.classList.remove('text-orange-400'); } else { btnTank.classList.add('active', 'text-cyan-700', 'border-cyan-200'); btnTank.classList.remove('text-cyan-400'); } } };
 window.setEditCustCategory = function(cat) { document.getElementById('editCustCategory').value = cat; const s = document.getElementById('edit-cat-stairs'); const t = document.getElementById('edit-cat-tank'); s.className = 'p-2 rounded border text-sm font-bold bg-gray-50 text-gray-400 border-gray-200'; t.className = 'p-2 rounded border text-sm font-bold bg-gray-50 text-gray-400 border-gray-200'; if(cat === 'stairs') s.className = 'p-2 rounded border text-sm font-bold bg-orange-100 text-orange-800 border-orange-200'; else t.className = 'p-2 rounded border text-sm font-bold bg-cyan-100 text-cyan-800 border-cyan-200'; };
+window.openPendingMonthPicker = function(itemId, currentStr) { window.appState.pendingMonthTargetId = itemId; window.appState.modalPickerYear = 114; window.appState.tempModalSet = new Set(); const regex = /(\d+)年\s*([0-9,]+)/g; let match; while ((match = regex.exec(currentStr)) !== null) { const y = parseInt(match[1]); const ms = match[2].split(',').map(Number); ms.forEach(m => window.appState.tempModalSet.add(`${y}-${m}`)); } renderModalMonthGrid(); document.getElementById('monthPickerModal').classList.remove('hidden'); };
+window.closeMonthPickerModal = function(e) { if(e && e.target !== e.currentTarget) return; document.getElementById('monthPickerModal').classList.add('hidden'); };
+window.applyModalMonths = function() { const groups = {}; window.appState.tempModalSet.forEach(key => { const [y, m] = key.split('-').map(Number); if(!groups[y]) groups[y] = []; groups[y].push(m); }); const parts = []; Object.keys(groups).sort().forEach(y => { const months = groups[y].sort((a,b)=>a-b).join(','); parts.push(`${y}年 ${months}月`); }); const targetId = window.appState.pendingMonthTargetId; if(targetId) { document.getElementById(`p-months-${targetId}`).value = parts.join(', '); } closeMonthPickerModal(null); };
+window.openHistory = function(address) { const list = document.getElementById('historyList'); const title = document.getElementById('historyTitle'); title.innerText = address; list.innerHTML = ''; const history = window.appState.records.filter(r => r.address === address); if(history.length === 0) { list.innerHTML = '<div class="text-center text-gray-400 py-10">尚無此地址的紀錄</div>'; } else { history.forEach(h => { const d = new Date(h.date); const dateStr = `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()}`; let typeText = '現金'; if(h.type === 'transfer') typeText = '匯款'; if(h.type === 'linepay') typeText = 'LinePay'; if(h.type === 'dad') typeText = '匯給爸爸'; const row = document.createElement('div'); row.className = 'p-3 border-b border-gray-100 flex justify-between items-center'; row.innerHTML = ` <div> <div class="text-sm font-bold text-gray-800">${dateStr} <span class="text-xs text-gray-500">(${h.collector})</span></div> <div class="text-xs text-blue-500">${h.months || '未填月份'}</div> </div> <div class="text-right"> <div class="font-bold text-emerald-600">$${h.amount}</div> <div class="text-xs text-gray-400">${typeText}</div> </div> `; list.appendChild(row); }); } document.getElementById('historyModal').classList.remove('hidden'); };
+window.closeHistory = function(e) { if(e && e.target !== e.currentTarget) return; document.getElementById('historyModal').classList.add('hidden'); };
 window.renderCustomerSettings = function() { const list = document.getElementById('customerListSettings'); const current = window.appState.currentCollector; const customers = window.appState.customers.filter(c => (c.collector === current) || (!c.collector && current === '子晴') ); list.innerHTML = ''; if(customers.length === 0) { list.innerHTML = `<div class="text-center text-gray-400 text-xs py-2">尚未建立 ${current} 的常用客戶</div>`; return; } customers.forEach(c => { const div = document.createElement('div'); div.className = 'flex justify-between items-center p-3 bg-white rounded-lg border border-gray-100 mb-2 shadow-sm'; const catIcon = c.category === 'tank' ? '💧' : '🪜'; 
 const dateTag = c.serviceDate ? `<span class="ml-1 text-[10px] bg-gray-100 text-gray-500 px-1 rounded">${c.serviceDate.slice(5)}</span>` : '';
 div.innerHTML = ` <div class="text-sm"> <div class="font-bold text-gray-800"><span class="mr-1">${catIcon}</span> ${c.address} ${dateTag} <span class="text-gray-400 text-xs font-normal">${c.floor || '不固定'}</span></div> <div class="text-emerald-600 font-bold">$${c.amount}</div> </div> <div class="flex"> <button onclick="openHistory('${c.address}')" class="text-orange-400 hover:text-orange-600 px-2 py-2"><i class="fa-solid fa-clock-rotate-left"></i></button> <button onclick="openEditCustomerModal('${c.id}', '${c.address}', ${c.amount}, '${c.floor || ''}', '${c.category || 'stairs'}', '${c.serviceDate || ''}')" class="text-gray-400 hover:text-blue-500 px-2 py-2"><i class="fa-solid fa-pen"></i></button> <button onclick="deleteCustomer('${c.id}')" class="text-gray-300 hover:text-red-500 px-2 py-2"><i class="fa-solid fa-trash-can"></i></button> </div> `; list.appendChild(div); }); };
