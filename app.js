@@ -21,7 +21,6 @@ window.appState = {
     pendingMonthTargetId: null,
     currentView: 'entry',
     reportBatchMonths: new Set(),
-    // 新增：修復待收清單月份選擇用的暫存
     tempModalSet: new Set()
 };
 
@@ -438,6 +437,7 @@ window.renderYearlyReport = function() {
             if(info) { 
                 const safeNote = (info.note || '').replace(/'/g, "\\'");
                 onclick = `openReportAction('edit', '${addr}', ${year}, ${m}, '${info.id}', '${info.fullDate}', ${info.amount}, '${info.type}', '${info.floor}', '${safeNote}')`; 
+                
                 let typeText = '💵 現金'; let typeBg = 'bg-emerald-50 text-emerald-700';
                 if(info.type === 'transfer') { typeText = '🏦 匯款'; typeBg = 'bg-blue-50 text-blue-700'; }
                 if(info.type === 'linepay') { typeText = '🟢 LP'; typeBg = 'bg-lime-50 text-lime-700'; }
@@ -497,7 +497,7 @@ window.openReportAction = function(mode, address, year, month, recordId, date, a
                 ${getFloorInput('reportAddFloor', defFloor)}
             </div>
             <div class="grid grid-cols-2 gap-2 mb-2"><div><label class="block text-xs text-gray-500 mb-1">金額 (單月)</label><input type="number" id="reportAddAmount" value="${defAmount}" placeholder="輸入金額" class="w-full p-2 border rounded"></div>${getTypeSelect('reportAddType', 'cash')}</div>
-            ${getNoteInput('reportAddNote', '補登')}
+            ${getNoteInput('reportAddNote', '')}
             <button onclick="batchAddReportRecords('${address}', ${year}, document.getElementById('reportAddAmount').value, document.getElementById('reportAddType').value, document.getElementById('reportAddFloor').value, document.getElementById('reportAddNote').value)" class="w-full py-3 bg-emerald-500 text-white rounded-lg font-bold mt-4">確認補登 (<span id="batchCount">1</span>筆)</button>`; 
     } 
     document.getElementById('reportActionModal').classList.remove('hidden'); 
@@ -523,7 +523,9 @@ window.batchAddReportRecords = async function(address, year, amount, type, floor
         const ref = doc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'records'));
         const record = { 
             date: dateInput, address: address, amount: parseInt(amount), floor: floor || '', 
-            months: `${year}年 ${m}月`, note: note || '補登', 
+            months: `${year}年 ${m}月`, 
+            // 修改點：如果 note 為空，就存空白字串，不要存 '補登'
+            note: note || '', 
             type: type || 'cash', 
             category: window.appState.reportCategory === 'all' ? 'stairs' : window.appState.reportCategory, 
             collector: window.appState.currentCollector, status: 'completed', createdAt: serverTimestamp() 
