@@ -249,6 +249,7 @@
                 <div><label class="block text-xs font-bold text-gray-500 mb-1">預設項目</label><div class="grid grid-cols-2 gap-2"><button type="button" onclick="setEditCustCategory('stairs')" id="edit-cat-stairs" class="p-2 rounded border text-sm font-bold bg-orange-100 text-orange-800 border-orange-200">🪜 洗樓梯</button><button type="button" onclick="setEditCustCategory('tank')" id="edit-cat-tank" class="p-2 rounded border text-sm font-bold bg-gray-50 text-gray-400 border-gray-200">💧 洗水塔</button></div><input type="hidden" id="editCustCategory" value="stairs"></div>
                 <div><label class="block text-xs font-bold text-gray-500 mb-1">地址 / 名稱 (必填)</label><input type="text" id="newCustAddr" placeholder="例如：錦州街" class="w-full p-3 bg-gray-50 border rounded-xl outline-none focus:border-green-500 text-lg"></div>
                 <div class="flex gap-2"><div class="flex-1"><label class="block text-xs font-bold text-gray-500 mb-1">金額 (必填)</label><input type="number" id="newCustAmt" placeholder="16000" inputmode="decimal" class="w-full p-3 bg-gray-50 border rounded-xl outline-none focus:border-green-500 font-bold text-emerald-600 text-lg"></div><div class="w-24"><label class="block text-xs font-bold text-gray-500 mb-1">樓層 (可不填)</label><input type="text" id="newCustFloor" placeholder="不固定" class="w-full p-3 bg-gray-50 border rounded-xl outline-none focus:border-green-500 text-center text-lg"></div></div>
+                <div><label class="block text-xs font-bold text-gray-500 mb-1">施作日期 (選填)</label><input type="date" id="newCustServiceDate" class="w-full p-3 bg-gray-50 border rounded-xl outline-none focus:border-green-500 text-lg"></div>
                 <button onclick="saveCustomer()" class="w-full py-3 bg-green-600 text-white rounded-xl font-bold mt-2 shadow text-lg">儲存</button>
             </div>
         </div>
@@ -263,10 +264,15 @@
             
             <div class="bg-gray-50 p-3 rounded-lg border border-gray-200 mb-3">
                 <div class="text-xs font-bold text-gray-500 mb-2">快速新增</div>
-                <div class="flex gap-2">
-                    <input type="text" id="mgrNewAddr" placeholder="地址" class="flex-1 p-2 border rounded text-sm">
-                    <input type="number" id="mgrNewAmt" placeholder="$" class="w-20 p-2 border rounded text-sm">
-                    <button onclick="managerAddCustomer()" class="bg-emerald-500 text-white px-3 rounded font-bold"><i class="fa-solid fa-plus"></i></button>
+                <div class="flex flex-col gap-2">
+                    <div class="flex gap-2">
+                        <input type="text" id="mgrNewAddr" placeholder="地址" class="flex-1 p-2 border rounded text-sm">
+                        <input type="number" id="mgrNewAmt" placeholder="$" class="w-20 p-2 border rounded text-sm">
+                    </div>
+                    <div class="flex gap-2">
+                        <input type="date" id="mgrNewServiceDate" class="flex-1 p-2 border rounded text-sm">
+                        <button onclick="managerAddCustomer()" class="bg-emerald-500 text-white px-3 rounded font-bold w-20"><i class="fa-solid fa-plus"></i></button>
+                    </div>
                 </div>
             </div>
 
