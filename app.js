@@ -19,7 +19,9 @@ window.appState = {
     reportYear: 114, 
     reportCategory: 'all', 
     pendingMonthTargetId: null,
-    currentView: 'entry'
+    currentView: 'entry',
+    // 新增：年報補登用的暫存月份
+    reportBatchMonths: new Set()
 };
 
 // --- 2. Firebase 設定 ---
@@ -89,13 +91,12 @@ function setupListeners() {
     const qCust = query(customersRef, orderBy('createdAt', 'desc'));
     onSnapshot(qCust, (snapshot) => {
         let custs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        // 依 Order 排序 (數值小的在前面)
+        // 依 Order 排序
         custs.sort((a, b) => (a.order || 0) - (b.order || 0));
         
         window.appState.customers = custs;
         if(window.appState.currentView === 'settings') window.renderCustomerSettings();
         if(!document.getElementById('customerModal').classList.contains('hidden')) window.renderCustomerSelect();
-        // 如果管理視窗開著，刷新它
         if(!document.getElementById('manageCustomerModal').classList.contains('hidden')) window.renderManageCustomerList();
         if(window.appState.currentView === 'report') window.renderYearlyReport();
     });
@@ -114,14 +115,14 @@ window.openManageCustomerModal = function() {
     
     // 初始化拖拽功能
     const el = document.getElementById('manageCustomerList');
-    if(window.sortableInstance) window.sortableInstance.destroy(); // 清除舊的
+    if(window.sortableInstance) window.sortableInstance.destroy(); 
     
     window.sortableInstance = new Sortable(el, {
-        handle: '.handle', // 只有按住這個圖示才能拖拽
+        handle: '.handle', 
         animation: 150,
-        ghostClass: 'bg-blue-50', // 拖拽時的影子樣式
+        ghostClass: 'bg-blue-50', 
         onEnd: function (evt) {
-            window.saveNewOrder(); // 拖拽結束後儲存
+            window.saveNewOrder(); 
         },
     });
 };
@@ -133,6 +134,8 @@ window.closeManageCustomerModal = function(e) {
 
 window.renderManageCustomerList = function() {
     const list = document.getElementById('manageCustomerList');
+    if(!list) return;
+    
     const current = window.appState.currentCollector;
     const catFilter = window.appState.reportCategory || 'all'; 
 
@@ -146,10 +149,9 @@ window.renderManageCustomerList = function() {
     list.innerHTML = '';
     if(custs.length === 0) { list.innerHTML = '<div class="text-center text-gray-400 mt-4">無資料</div>'; return; }
 
-    custs.forEach((c) => {
+    custs.forEach((c, index) => {
         const catIcon = (c.category || 'stairs') === 'tank' ? '💧' : '🪜';
         const div = document.createElement('div');
-        // 加入 data-id 方便之後抓取順序
         div.setAttribute('data-id', c.id);
         div.className = 'flex items-center justify-between p-3 bg-white border border-gray-100 mb-2 rounded-lg shadow-sm';
         
@@ -163,13 +165,17 @@ window.renderManageCustomerList = function() {
                     <div class="text-xs text-gray-400">$${c.amount}</div>
                 </div>
             </div>
-            <button onclick="deleteCustomer('${c.id}')" class="text-gray-300 hover:text-red-500 p-2"><i class="fa-solid fa-trash-can"></i></button>
+            <button onclick="deleteCustomerInManager('${c.id}', event)" class="text-gray-300 hover:text-red-500 p-2 z-10"><i class="fa-solid fa-trash-can"></i></button>
         `;
         list.appendChild(div);
     });
 };
 
-// 儲存新順序 (Batch Update)
+window.deleteCustomerInManager = function(id, event) {
+    if(event) event.stopPropagation(); 
+    window.deleteCustomer(id);
+};
+
 window.saveNewOrder = async function() {
     if(!currentUser) return;
     const list = document.getElementById('manageCustomerList');
@@ -178,29 +184,17 @@ window.saveNewOrder = async function() {
     const batch = writeBatch(db);
     let hasUpdates = false;
 
-    // 取得所有目前列表中的 ID
     const currentIds = Array.from(itemEls).map(el => el.getAttribute('data-id'));
     
-    // 我們只更新當前過濾範圍內的客戶順序
-    // 為了保持全局順序，我們通常使用當前時間戳 + 索引當作 order
-    const baseOrder = Date.now(); 
-
     currentIds.forEach((id, index) => {
         const ref = doc(db, 'artifacts', APP_ID, 'public', 'data', 'customers', id);
-        // 設定新的 order 值 (越小越前面)
-        // 這裡用簡單的 index * 1000 確保有空間插隊，或直接用 index
         batch.update(ref, { order: index });
         hasUpdates = true;
     });
 
     if(hasUpdates) {
-        try {
-            await batch.commit();
-            // window.showToast("順序已更新"); // 不需要一直跳提示，體驗較好
-        } catch(e) {
-            console.error("Order update failed", e);
-            window.showToast("排序儲存失敗");
-        }
+        try { await batch.commit(); } 
+        catch(e) { console.error("Order update failed", e); window.showToast("排序儲存失敗"); }
     }
 };
 
@@ -212,19 +206,13 @@ window.managerAddCustomer = async function() {
 
     if(!addr || isNaN(amt)) { alert("請輸入地址和金額"); return; }
 
-    // 新增時，找出目前最大的 order 值，加在最後面
     let maxOrder = 0;
-    window.appState.customers.forEach(c => {
-        if(c.order && c.order > maxOrder) maxOrder = c.order;
-    });
+    window.appState.customers.forEach(c => { if(c.order && c.order > maxOrder) maxOrder = c.order; });
 
     const data = {
-        address: addr,
-        amount: amt,
-        category: cat,
+        address: addr, amount: amt, category: cat,
         collector: window.appState.currentCollector,
-        createdAt: serverTimestamp(),
-        order: maxOrder + 1 
+        createdAt: serverTimestamp(), order: maxOrder + 1 
     };
 
     try {
@@ -235,7 +223,7 @@ window.managerAddCustomer = async function() {
     } catch(e) { window.showToast("新增失敗"); }
 };
 
-// --- (以下接續原本的邏輯) ---
+// --- Window Functions ---
 
 window.setReportCategory = function(cat) {
     window.appState.reportCategory = cat;
@@ -272,6 +260,7 @@ window.toggleView = function(viewName) {
     if(viewName === 'entry') { window.renderRecords(); window.renderPendingList(); }
 };
 
+// --- 5. 資料庫寫入功能 ---
 window.addRecord = async function() {
     if(!currentUser) { window.showToast("尚未連線"); return; }
     const newRecord = getFormData();
@@ -320,6 +309,14 @@ window.updateRecordStatus = async function(docId, newStatus) {
 window.deletePending = async function(docId) {
     if(!currentUser) return;
     if(confirm("從清單移除？")) { await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'pending', docId)); }
+};
+
+window.deleteCustomer = async function(docId) {
+    if(!currentUser) return;
+    if(confirm("確定從常用名單移除？(不會刪除歷史記帳紀錄)")) {
+        await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'customers', docId));
+        window.showToast("🗑️ 已刪除");
+    }
 };
 // --- 6. 表單與其他輔助功能 ---
 
@@ -383,22 +380,15 @@ window.renderYearlyReport = function() {
         return true;
     });
 
-    const addressSet = new Set();
-    custs.forEach(c => addressSet.add(c.address)); 
-    records.forEach(r => addressSet.add(r.address)); 
+    const addresses = custs.map(c => c.address);
+    records.forEach(r => { if(!addresses.includes(r.address)) addresses.push(r.address); });
 
-    // 使用已經排序好的 custs 順序
-    let sortedAddresses = [];
-    custs.forEach(c => sortedAddresses.push(c.address));
-    // 補上只有紀錄的地址
-    records.forEach(r => { if(!sortedAddresses.includes(r.address)) sortedAddresses.push(r.address); });
-
-    if(sortedAddresses.length === 0) { 
+    if(addresses.length === 0) { 
         container.innerHTML = '<div class="text-center text-gray-400 py-10">尚無資料</div>'; 
         return; 
     } 
 
-    sortedAddresses.forEach(addr => { 
+    addresses.forEach(addr => { 
         const monthInfo = Array(13).fill(null); 
         const addrRecords = window.appState.records.filter(r => r.address === addr); 
         
@@ -418,13 +408,9 @@ window.renderYearlyReport = function() {
                             let status = 'paid'; 
                             if(r.status === 'no_payment' || r.status === 'no_receipt') { status = 'warning'; } 
                             monthInfo[m] = { 
-                                status: status, 
-                                date: collectDate, 
-                                id: r.id, 
-                                amount: r.amount, 
-                                fullDate: r.date, 
-                                type: r.type || 'cash',
-                                floor: r.floor || '' 
+                                status: status, date: collectDate, id: r.id, 
+                                amount: r.amount, fullDate: r.date, 
+                                type: r.type || 'cash', floor: r.floor || '' 
                             }; 
                         } 
                     }); 
@@ -438,14 +424,16 @@ window.renderYearlyReport = function() {
         let monthHtml = ''; 
         for(let m=1; m<=12; m++) { 
             const info = monthInfo[m]; 
+            // 如果是空格子，點擊觸發「補登」 (模式 'add', 帶入該月份)
+            let onclick = `openReportAction('add', '${addr}', ${year}, ${m})`; 
             let boxClass = 'border border-gray-100 bg-gray-50 rounded p-2 flex flex-col justify-between min-h-[70px] relative transition-all active:scale-95';
             let content = `<span class="text-xs text-gray-300 font-bold absolute top-1 right-2">${m}月</span>`; 
-            let onclick = `openReportAction('${addr}', ${year}, ${m}, null, null, null, 'cash', '')`; 
 
             if(info) { 
-                onclick = `openReportAction('${addr}', ${year}, ${m}, '${info.id}', '${info.fullDate}', ${info.amount}, '${info.type}', '${info.floor}')`; 
-                let typeText = '💵 現金';
-                let typeBg = 'bg-emerald-50 text-emerald-700';
+                // 如果有資料，點擊觸發「編輯」 (模式 'edit', 帶入詳細資料)
+                onclick = `openReportAction('edit', '${addr}', ${year}, ${m}, '${info.id}', '${info.fullDate}', ${info.amount}, '${info.type}', '${info.floor}')`; 
+                
+                let typeText = '💵 現金'; let typeBg = 'bg-emerald-50 text-emerald-700';
                 if(info.type === 'transfer') { typeText = '🏦 匯款'; typeBg = 'bg-blue-50 text-blue-700'; }
                 if(info.type === 'linepay') { typeText = '🟢 LP'; typeBg = 'bg-lime-50 text-lime-700'; }
                 if(info.type === 'dad') { typeText = '👴 匯爸'; typeBg = 'bg-purple-50 text-purple-700'; }
@@ -461,29 +449,106 @@ window.renderYearlyReport = function() {
     }); 
 };
 
-// --- Modal Functions ---
-window.openReportAction = function(address, year, month, recordId, date, amount, type, floor) { 
+// --- Modal Functions (New Logic for Batch Add) ---
+
+window.openReportAction = function(mode, address, year, month, recordId, date, amount, type, floor) { 
     const title = document.getElementById('reportActionTitle'); 
     const content = document.getElementById('reportActionContent'); 
     const getTypeSelect = (id, currentVal) => `<div><label class="block text-xs text-gray-500 mb-1">方式</label><select id="${id}" class="w-full p-2 border rounded bg-white"><option value="cash" ${currentVal === 'cash' ? 'selected' : ''}>💵 現金</option><option value="transfer" ${currentVal === 'transfer' ? 'selected' : ''}>🏦 匯款</option><option value="linepay" ${currentVal === 'linepay' ? 'selected' : ''}>🟢 LinePay</option><option value="dad" ${currentVal === 'dad' ? 'selected' : ''}>👴 匯給爸爸</option></select></div>`;
     const getFloorInput = (id, val) => `<div><label class="block text-xs text-gray-500 mb-1">樓層/戶號</label><input type="text" id="${id}" value="${val || ''}" class="w-full p-2 border rounded bg-white" placeholder="例如：5F"></div>`;
 
-    if(recordId) { 
+    if(mode === 'edit') {
+        // --- 單筆編輯模式 (維持原樣) ---
         title.innerText = `編輯紀錄：${address} (${month}月)`; 
         content.innerHTML = ` 
             <div class="grid grid-cols-2 gap-2 mb-2"><div><label class="block text-xs text-gray-500 mb-1">收款日期</label><input type="date" id="reportEditDate" value="${date}" class="w-full p-2 border rounded"></div>${getFloorInput('reportEditFloor', floor)}</div><div><label class="block text-xs text-gray-500 mb-1">金額</label><input type="number" id="reportEditAmount" value="${amount}" class="w-full p-2 border rounded"></div>${getTypeSelect('reportEditType', type)}<div class="grid grid-cols-2 gap-2 mt-4"><button onclick="deleteReportRecord('${recordId}')" class="py-2 bg-red-100 text-red-600 rounded-lg font-bold">刪除紀錄</button><button onclick="updateReportRecord('${recordId}', document.getElementById('reportEditDate').value, document.getElementById('reportEditAmount').value, document.getElementById('reportEditType').value, document.getElementById('reportEditFloor').value)" class="py-2 bg-blue-600 text-white rounded-lg font-bold">儲存修改</button></div>`; 
     } else { 
+        // --- 批次補登模式 (新功能) ---
         const cust = window.appState.customers.find(c => c.address === address); 
         const defAmount = cust ? cust.amount : ''; 
         const defFloor = cust ? cust.floor : ''; 
         const today = new Date().toISOString().split('T')[0]; 
-        title.innerText = `補登紀錄：${address} (${month}月)`; 
-        content.innerHTML = `<div class="text-sm text-gray-500 mb-2">確定要補登 <strong>${year}年${month}月</strong> 的收款嗎？</div><div class="grid grid-cols-2 gap-2 mb-2"><div><label class="block text-xs text-gray-500 mb-1">收款日期</label><input type="date" id="reportAddDate" value="${today}" class="w-full p-2 border rounded"></div>${getFloorInput('reportAddFloor', defFloor)}</div><div><label class="block text-xs text-gray-500 mb-1">金額</label><input type="number" id="reportAddAmount" value="${defAmount}" placeholder="輸入金額" class="w-full p-2 border rounded"></div>${getTypeSelect('reportAddType', 'cash')}<button onclick="addReportRecord('${address}', ${year}, ${month}, document.getElementById('reportAddAmount').value, document.getElementById('reportAddType').value, document.getElementById('reportAddFloor').value)" class="w-full py-3 bg-emerald-500 text-white rounded-lg font-bold mt-4">確認補登</button>`; 
+        
+        // 初始化選取的月份
+        window.appState.reportBatchMonths.clear();
+        window.appState.reportBatchMonths.add(month); // 加入當前點擊的月份
+
+        title.innerText = `補登紀錄：${address}`; 
+        
+        // 產生月份選擇器 HTML
+        let monthSelectorHtml = '<div class="grid grid-cols-6 gap-2 mb-3">';
+        for(let i=1; i<=12; i++) {
+            const isSelected = i === month ? 'bg-blue-500 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200';
+            monthSelectorHtml += `<button onclick="toggleBatchMonth(this, ${i})" class="p-2 rounded border text-sm font-bold ${isSelected}">${i}月</button>`;
+        }
+        monthSelectorHtml += '</div>';
+
+        content.innerHTML = `
+            <div class="text-xs text-gray-400 mb-1">選擇月份 (可多選)</div>
+            ${monthSelectorHtml}
+            <div class="grid grid-cols-2 gap-2 mb-2">
+                <div><label class="block text-xs text-gray-500 mb-1">收款日期</label><input type="date" id="reportAddDate" value="${today}" class="w-full p-2 border rounded"></div>
+                ${getFloorInput('reportAddFloor', defFloor)}
+            </div>
+            <div><label class="block text-xs text-gray-500 mb-1">金額 (單月)</label><input type="number" id="reportAddAmount" value="${defAmount}" placeholder="輸入金額" class="w-full p-2 border rounded"></div>
+            ${getTypeSelect('reportAddType', 'cash')}
+            <button onclick="batchAddReportRecords('${address}', ${year}, document.getElementById('reportAddAmount').value, document.getElementById('reportAddType').value, document.getElementById('reportAddFloor').value)" class="w-full py-3 bg-emerald-500 text-white rounded-lg font-bold mt-4">確認補登 (<span id="batchCount">1</span>筆)</button>`; 
     } 
     document.getElementById('reportActionModal').classList.remove('hidden'); 
 };
+
+window.toggleBatchMonth = function(btn, m) {
+    if(window.appState.reportBatchMonths.has(m)) {
+        window.appState.reportBatchMonths.delete(m);
+        btn.className = 'p-2 rounded border border-gray-200 text-sm font-bold bg-white text-gray-600';
+    } else {
+        window.appState.reportBatchMonths.add(m);
+        btn.className = 'p-2 rounded border border-blue-600 text-sm font-bold bg-blue-500 text-white';
+    }
+    document.getElementById('batchCount').innerText = window.appState.reportBatchMonths.size;
+};
+
+window.batchAddReportRecords = async function(address, year, amount, type, floor) { 
+    if(!currentUser) return; 
+    if(window.appState.reportBatchMonths.size === 0) { alert("請至少選擇一個月份"); return; }
+    
+    const dateInput = document.getElementById('reportAddDate').value;
+    const batch = writeBatch(db);
+    
+    // 遍歷選取的月份，每個月份建立一筆紀錄
+    window.appState.reportBatchMonths.forEach(m => {
+        const ref = doc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'records'));
+        const record = { 
+            date: dateInput, 
+            address: address, 
+            amount: parseInt(amount), 
+            floor: floor || '', 
+            months: `${year}年 ${m}月`, // 這裡每個紀錄存單一月份 
+            note: '補登', 
+            type: type || 'cash', 
+            category: window.appState.reportCategory === 'all' ? 'stairs' : window.appState.reportCategory, // 使用當前過濾的分類，避免判斷錯誤
+            collector: window.appState.currentCollector, 
+            status: 'completed', 
+            createdAt: serverTimestamp() 
+        }; 
+        
+        // 二次檢查 category (如果是在 'all' 模式下，嘗試從客戶資料抓)
+        if(window.appState.reportCategory === 'all') {
+             const cust = window.appState.customers.find(c => c.address === address);
+             if(cust && cust.category) record.category = cust.category;
+        }
+
+        batch.set(ref, record);
+    });
+
+    try { 
+        await batch.commit(); 
+        window.closeReportActionModal(null); 
+        window.showToast(`✅ 已補登 ${window.appState.reportBatchMonths.size} 筆`); 
+    } catch(e) { console.error(e); window.showToast("補登失敗"); } 
+};
+
 window.closeReportActionModal = function(e) { if(e && e.target !== e.currentTarget) return; document.getElementById('reportActionModal').classList.add('hidden'); };
-window.addReportRecord = async function(address, year, month, amount, type, floor) { if(!currentUser) return; const record = { date: new Date().toISOString().split('T')[0], address: address, amount: amount, floor: floor || '', months: `${year}年 ${month}月`, note: '補登', type: type || 'cash', category: 'stairs', collector: window.appState.currentCollector, status: 'completed', createdAt: serverTimestamp() }; const cust = window.appState.customers.find(c => c.address === address); if(cust) { if(cust.category) record.category = cust.category; } try { await addDoc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'records'), record); window.closeReportActionModal(null); window.showToast("✅ 已補登"); } catch(e) { window.showToast("補登失敗"); } };
 window.updateReportRecord = async function(docId, date, amount, type, floor) { if(!currentUser) return; try { await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'records', docId), { date: date, amount: parseInt(amount), type: type, floor: floor }); window.closeReportActionModal(null); window.showToast("已更新"); } catch(e) { window.showToast("更新失敗"); } };
 window.deleteReportRecord = async function(docId) { if(!currentUser) return; if(confirm("確定刪除？這月份將變回未收狀態")) { await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'records', docId)); window.closeReportActionModal(null); window.showToast("🗑️ 已刪除"); } };
 
@@ -515,11 +580,6 @@ window.closeHistory = function(e) { if(e && e.target !== e.currentTarget) return
 window.renderCustomerSettings = function() { const list = document.getElementById('customerListSettings'); const current = window.appState.currentCollector; const customers = window.appState.customers.filter(c => (c.collector === current) || (!c.collector && current === '子晴') ); list.innerHTML = ''; if(customers.length === 0) { list.innerHTML = `<div class="text-center text-gray-400 text-xs py-2">尚未建立 ${current} 的常用客戶</div>`; return; } customers.forEach(c => { const div = document.createElement('div'); div.className = 'flex justify-between items-center p-3 bg-white rounded-lg border border-gray-100 mb-2 shadow-sm'; const catIcon = c.category === 'tank' ? '💧' : '🪜'; div.innerHTML = ` <div class="text-sm"> <div class="font-bold text-gray-800"><span class="mr-1">${catIcon}</span> ${c.address} <span class="text-gray-400 text-xs font-normal">${c.floor || '不固定'}</span></div> <div class="text-emerald-600 font-bold">$${c.amount}</div> </div> <div class="flex"> <button onclick="openHistory('${c.address}')" class="text-orange-400 hover:text-orange-600 px-2 py-2"><i class="fa-solid fa-clock-rotate-left"></i></button> <button onclick="openEditCustomerModal('${c.id}', '${c.address}', ${c.amount}, '${c.floor || ''}', '${c.category || 'stairs'}')" class="text-gray-400 hover:text-blue-500 px-2 py-2"><i class="fa-solid fa-pen"></i></button> <button onclick="deleteCustomer('${c.id}')" class="text-gray-300 hover:text-red-500 px-2 py-2"><i class="fa-solid fa-trash-can"></i></button> </div> `; list.appendChild(div); }); };
 window.renderCustomerSelect = function() { const list = document.getElementById('customerSelectList'); const search = document.getElementById('customerSearch').value.toLowerCase(); const current = window.appState.currentCollector; const customers = window.appState.customers.filter(c => (c.collector === current) || (!c.collector && current === '子晴') ); list.innerHTML = ''; const filtered = customers.filter(c => c.address.toLowerCase().includes(search)); document.getElementById('customerModalCollector').innerText = current; if(filtered.length === 0 && search.length > 0) { const btn = document.createElement('button'); btn.className = 'w-full p-4 bg-blue-50 text-blue-600 rounded-xl font-bold flex items-center justify-center border border-blue-200 active:bg-blue-100'; btn.onclick = () => selectCustomer(search, '', '', 'stairs'); btn.innerHTML = `<i class="fa-solid fa-plus mr-2"></i> 直接填寫：${search}`; list.appendChild(btn); return; } filtered.forEach(c => { const lastRec = window.appState.records.find(r => r.address === c.address); let lastInfo = '尚無紀錄'; if(lastRec) { const d = new Date(lastRec.date); lastInfo = `上次：${d.getMonth()+1}/${d.getDate()} (${lastRec.months || '?'}) - ${lastRec.collector}`; } const btn = document.createElement('button'); btn.className = 'list-btn w-full p-3 bg-gray-50 border border-gray-100 rounded-xl flex justify-between items-center text-left mb-2 active:bg-blue-50'; btn.onclick = () => selectCustomer(c.address, c.floor, c.amount, c.category); const catIcon = c.category === 'tank' ? '💧' : '🪜'; btn.innerHTML = ` <div> <div class="font-bold text-gray-800 text-lg"><span class="mr-1">${catIcon}</span>${c.address} <span class="text-sm font-normal text-gray-500">${c.floor || ''}</span></div> <div class="text-xs text-gray-400 mt-1">${lastInfo}</div> </div> <div class="font-bold text-emerald-600">$${c.amount}</div> `; list.appendChild(btn); }); };
 window.selectCustomer = function(addr, floor, amount, category) { document.getElementById('inputAddress').value = addr; document.getElementById('inputFloor').value = floor || ''; document.getElementById('inputAmount').value = amount || ''; if(category) window.setServiceCategory(category); window.checkPaidStatus(addr); closeCustomerSelect(null); showToast("已填入資料"); };
-window.updateSummary = function() { let totalCashAll = 0, totalTransferAll = 0, totalLinePayAll = 0, totalDadAll = 0; let totalCashMe = 0, totalTransferMe = 0, totalLinePayMe = 0, totalDadMe = 0; let breakdown = { '子晴': { cash: 0, transfer: 0 }, '子涵': { cash: 0, transfer: 0 }, '宗敬': { cash: 0, transfer: 0 }, '其他': { cash: 0, transfer: 0 } }; let catStats = { 'stairs': 0, 'tank': 0 }; let pendingReceiptCount = 0; let pendingPaymentCount = 0; const current = window.appState.currentCollector; window.appState.records.forEach(r => { let col = r.collector; if(!col || (col !== '子晴' && col !== '子涵' && col !== '宗敬')) { col = '其他'; if (r.collector === '我') col = '其他'; if (r.collector === '妹') col = '其他'; if (r.collector === '弟') col = '其他'; } if (col === current) { if (r.status === 'no_receipt') pendingReceiptCount++; if (r.status === 'no_payment') pendingPaymentCount++; } if (r.status === 'no_payment') return; if (r.type === 'cash') { totalCashAll += r.amount; if (col === current) totalCashMe += r.amount; breakdown[col].cash += r.amount; } else if (r.type === 'transfer') { totalTransferAll += r.amount; if (col === current) totalTransferMe += r.amount; breakdown[col].transfer += r.amount; } else if (r.type === 'linepay') { totalLinePayAll += r.amount; if (col === current) totalLinePayMe += r.amount; } else if (r.type === 'dad') { totalDadAll += r.amount; if (col === current) totalDadMe += r.amount; } const cat = r.category === 'tank' ? 'tank' : 'stairs'; catStats[cat] += r.amount; }); const grandTotalMe = totalCashMe + totalTransferMe + totalLinePayMe + totalDadMe; const userHolding = totalCashMe + totalTransferMe + totalLinePayMe; const fmt = (n) => `$${n.toLocaleString()}`; document.getElementById('headerCashTotal').innerText = fmt(totalCashMe + totalLinePayMe); document.getElementById('headerTransferTotal').innerText = fmt(totalTransferMe); document.getElementById('headerGrandTotal').innerText = fmt(grandTotalMe); document.getElementById('settleCash').innerText = fmt(totalCashMe); document.getElementById('settleTransfer').innerText = fmt(totalTransferMe); document.getElementById('settleLinePay').innerText = fmt(totalLinePayMe); document.getElementById('settleDad').innerText = fmt(totalDadMe); document.getElementById('settleTotal').innerText = fmt(grandTotalMe); const salary = parseInt(document.getElementById('mySalary').value) || 0; const finalToDad = userHolding - salary; document.getElementById('finalToDad').innerText = fmt(finalToDad); document.getElementById('categoryBreakdown').innerHTML = ` <div class="bg-white p-3 rounded-lg border border-orange-200 text-center"> <div class="text-xs text-orange-600 font-bold mb-1">🪜 洗樓梯 (全部)</div> <div class="text-xl font-bold text-gray-800">${fmt(catStats.stairs)}</div> </div> <div class="bg-white p-3 rounded-lg border border-cyan-200 text-center"> <div class="text-xs text-cyan-600 font-bold mb-1">💧 洗水塔 (全部)</div> <div class="text-xl font-bold text-gray-800">${fmt(catStats.tank)}</div> </div> `; const warningContainer = document.getElementById('settleWarnings'); warningContainer.innerHTML = ''; if (pendingReceiptCount > 0 || pendingPaymentCount > 0) { warningContainer.classList.remove('hidden'); if (pendingReceiptCount > 0) { warningContainer.innerHTML += `<div class="bg-red-100 text-red-800 p-3 rounded-lg text-sm font-bold flex items-center"><i class="fa-solid fa-triangle-exclamation mr-2"></i> 您有 ${pendingReceiptCount} 筆帳款還沒給收據！</div>`; } if (pendingPaymentCount > 0) { warningContainer.innerHTML += `<div class="bg-orange-100 text-orange-800 p-3 rounded-lg text-sm font-bold flex items-center"><i class="fa-solid fa-hourglass-half mr-2"></i> 您有 ${pendingPaymentCount} 筆匯款尚未確認入帳！</div>`; } } else { warningContainer.classList.add('hidden'); } };
-window.calculateSettlement = function() { window.updateSummary(); };
-window.addTag = function(text) { const el = document.getElementById('inputNote'); el.value = el.value ? el.value + `，${text}` : text; };
-window.showToast = function(msg) { const t = document.getElementById('toast'); t.innerText = msg; t.style.display = 'block'; t.style.opacity = '1'; t.style.transform = 'translate(-50%, 0)'; setTimeout(() => { t.style.display = 'none'; }, 2000); };
-window.exportData = function() { const data = window.appState; const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `雲端收費備份_${new Date().toISOString().slice(0,10)}.json`; a.click(); };
 window.printAllRecords = function() { const records = window.appState.records; if (records.length === 0) { window.showToast("目前沒有紀錄可列印"); return; } let totalCash = 0; let totalTransfer = 0; let totalLinePay = 0; let totalDad = 0; let totalAmount = 0; records.forEach(r => { if (r.status === 'no_payment') return; if(r.type === 'cash') totalCash += r.amount; else if(r.type === 'transfer') totalTransfer += r.amount; else if(r.type === 'linepay') totalLinePay += r.amount; else if(r.type === 'dad') totalDad += r.amount; totalAmount += r.amount; }); const dateStr = new Date().toLocaleDateString('zh-TW', {year: 'numeric', month: '2-digit', day: '2-digit'}); let html = ` <div class="print-title">清潔收費總報表</div> <div style="text-align:center; margin-bottom:10px;">列印日期：${dateStr}</div> <div class="print-summary"> <div> <div style="font-size:12px;">本期總收入</div> <div style="font-size:16px; font-weight:bold;">$${totalAmount.toLocaleString()}</div> </div> <div> <div style="font-size:12px;">現金總額</div> <div style="font-size:16px; font-weight:bold;">$${totalCash.toLocaleString()}</div> </div> <div> <div style="font-size:12px;">匯款總額</div> <div style="font-size:16px; font-weight:bold;">$${totalTransfer.toLocaleString()}</div> </div> <div> <div style="font-size:12px;">LinePay</div> <div style="font-size:16px; font-weight:bold;">$${totalLinePay.toLocaleString()}</div> </div> <div> <div style="font-size:12px;">已匯給爸爸</div> <div style="font-size:16px; font-weight:bold;">$${totalDad.toLocaleString()}</div> </div> </div> <table class="print-table"> <thead> <tr> <th width="12%">日期</th> <th width="10%">經手人</th> <th width="25%">地址/客戶</th> <th width="10%">項目</th> <th width="10%">金額</th> <th width="10%">方式</th> <th width="13%">月份</th> <th width="10%">備註</th> </tr> </thead> <tbody> `; records.forEach(r => { const d = new Date(r.date); const dStr = `${d.getMonth()+1}/${d.getDate()}`; const cat = r.category === 'tank' ? '水塔' : '樓梯'; let type = '現金'; if(r.type === 'transfer') type = '匯款'; if(r.type === 'linepay') type = 'LinePay'; if(r.type === 'dad') type = '已匯爸'; let note = r.note || ''; if(r.status === 'no_receipt') note += ' (欠收據)'; if(r.status === 'no_payment') note += ' (未入帳)'; const collector = r.collector || '子晴'; const floor = r.floor ? `(${r.floor})` : ''; html += ` <tr> <td>${dStr}</td> <td>${collector}</td> <td>${r.address} ${floor}</td> <td>${cat}</td> <td style="font-weight:bold;">$${r.amount.toLocaleString()}</td> <td>${type}</td> <td style="font-size:11px;">${r.months || ''}</td> <td style="font-size:11px;">${note}</td> </tr> `; }); html += ` </tbody> </table> `; document.getElementById('printContainer').innerHTML = html; window.print(); };
 window.openAddCustomerModal = function() { window.appState.editingCustomerId = null; document.getElementById('customerModalTitle').innerHTML = '<i class="fa-solid fa-user-plus text-green-600"></i> 新增常用客戶'; document.getElementById('newCustAddr').value = ''; document.getElementById('newCustAmt').value = ''; document.getElementById('newCustFloor').value = ''; document.getElementById('addCustomerModal').classList.remove('hidden'); window.setEditCustCategory('stairs'); setTimeout(() => document.getElementById('newCustAddr').focus(), 100); };
 window.openEditCustomerModal = function(id, addr, amt, floor, cat) { window.appState.editingCustomerId = id; document.getElementById('customerModalTitle').innerHTML = '<i class="fa-solid fa-pen-to-square text-blue-600"></i> 編輯常用客戶'; document.getElementById('newCustAddr').value = addr; document.getElementById('newCustAmt').value = amt; document.getElementById('newCustFloor').value = floor; window.setEditCustCategory(cat || 'stairs'); document.getElementById('addCustomerModal').classList.remove('hidden'); };
