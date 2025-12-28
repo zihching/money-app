@@ -42,6 +42,7 @@ let currentUser = null;
 
 enableIndexedDbPersistence(db).catch((err) => { console.log("Persistence disabled:", err.code); });
 
+// --- 3. 登入與監聽 ---
 const initAuth = async () => {
     if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
         try { await signInWithCustomToken(auth, __initial_auth_token); } 
@@ -79,6 +80,7 @@ function setupListeners() {
         if(window.appState.currentView === 'settle') window.updateSummary();
         if(window.appState.currentView === 'report') window.renderYearlyReport();
         if(window.appState.currentView === 'settings') window.renderCustomerSettings();
+        
         const addr = document.getElementById('inputAddress');
         if(addr && addr.value) window.checkPaidStatus(addr.value);
     });
@@ -97,8 +99,8 @@ function setupListeners() {
         window.renderPendingList();
     });
 }
+// --- 4. 視窗與 UI 切換功能 ---
 
-// --- Window Functions ---
 window.setReportCategory = function(cat) {
     window.appState.reportCategory = cat;
     const btns = { 'all': 'rep-cat-all', 'stairs': 'rep-cat-stairs', 'tank': 'rep-cat-tank' };
@@ -133,6 +135,8 @@ window.toggleView = function(viewName) {
     if(viewName === 'settings') window.renderCustomerSettings();
     if(viewName === 'entry') { window.renderRecords(); window.renderPendingList(); }
 };
+
+// --- 5. 資料庫寫入功能 ---
 
 window.addRecord = async function() {
     if(!currentUser) { window.showToast("尚未連線"); return; }
@@ -183,6 +187,7 @@ window.deletePending = async function(docId) {
     if(!currentUser) return;
     if(confirm("從清單移除？")) { await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'pending', docId)); }
 };
+
 // --- 6. 表單與其他輔助功能 ---
 
 function getFormData() {
@@ -214,7 +219,65 @@ function clearFormData() {
     window.setStatus('completed'); 
 }
 
-// --- 7. 報表邏輯 (Year Report) - 升級：支援編輯樓層 ---
+// --- 7. Modal Logic (確認收款) ---
+
+window.openConfirmCollectionModal = function(id, amount, address, category, serviceDate) {
+    const floor = document.getElementById(`p-floor-${id}`).value;
+    const months = document.getElementById(`p-months-${id}`).value;
+    const note = document.getElementById(`p-note-${id}`).value;
+    const type = document.getElementById(`p-type-${id}`).value;
+
+    window.appState.currentPendingAction = { id, amount, address, category, floor, months, note, type };
+    document.getElementById('confirmModalAddress').innerText = address;
+    document.getElementById('confirmModalMonths').value = months; 
+    document.getElementById('confirmModalAmount').innerText = `$${amount}`;
+    document.getElementById('confirmModalNote').value = note || '';
+
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('confirmModalDate').value = today;
+    document.getElementById('confirmModalServiceDate').value = serviceDate || '';
+    
+    document.getElementById('confirmModalType').value = type;
+    window.setModalStatus('completed');
+
+    document.getElementById('confirmCollectionModal').classList.remove('hidden');
+    document.getElementById('confirmCollectionBtn').onclick = doConfirmCollection;
+};
+
+window.closeConfirmCollectionModal = function(e) {
+    if(e && e.target !== e.currentTarget) return;
+    document.getElementById('confirmCollectionModal').classList.add('hidden');
+};
+
+window.doConfirmCollection = function() {
+    const action = window.appState.currentPendingAction;
+    if(!action) return;
+
+    const date = document.getElementById('confirmModalDate').value;
+    const serviceDate = document.getElementById('confirmModalServiceDate').value; 
+    const months = document.getElementById('confirmModalMonths').value; 
+    const type = document.getElementById('confirmModalType').value; 
+    const status = document.getElementById('modalInputStatus').value;
+    const note = document.getElementById('confirmModalNote').value;
+
+    if(!date) { alert("請選擇收款日期"); return; }
+
+    window.completePending(action.id, {
+        date: date,
+        serviceDate: serviceDate,
+        amount: action.amount,
+        address: action.address,
+        floor: action.floor,
+        months: months,
+        note: note, 
+        type: type,
+        category: action.category,
+        status: status
+    });
+
+    closeConfirmCollectionModal(null);
+};
+// --- 8. 報表邏輯 (Year Report) - 卡片化 & 編輯樓層 ---
 
 window.changeReportYear = function(delta) { 
     window.appState.reportYear += delta; 
@@ -282,7 +345,7 @@ window.renderYearlyReport = function() {
                                 amount: r.amount, 
                                 fullDate: r.date, 
                                 type: r.type || 'cash',
-                                floor: r.floor || '' // 確保樓層資料被讀取
+                                floor: r.floor || '' 
                             }; 
                         } 
                     }); 
@@ -298,11 +361,9 @@ window.renderYearlyReport = function() {
             const info = monthInfo[m]; 
             let boxClass = 'border border-gray-100 bg-gray-50 rounded p-2 flex flex-col justify-between min-h-[70px] relative transition-all active:scale-95';
             let content = `<span class="text-xs text-gray-300 font-bold absolute top-1 right-2">${m}月</span>`; 
-            // 這裡按下去是「補登」，傳入空的樓層
             let onclick = `openReportAction('${addr}', ${year}, ${m}, null, null, null, 'cash', '')`; 
 
             if(info) { 
-                // 這裡按下去是「編輯」，傳入 info.floor
                 onclick = `openReportAction('${addr}', ${year}, ${m}, '${info.id}', '${info.fullDate}', ${info.amount}, '${info.type}', '${info.floor}')`; 
                 
                 let typeText = '💵 現金';
@@ -337,13 +398,12 @@ window.renderYearlyReport = function() {
     }); 
 };
 
-// --- Modal Functions (新增了 floor 參數) ---
+// --- Modal Functions (Editing Report) ---
 window.openReportAction = function(address, year, month, recordId, date, amount, type, floor) { 
     const title = document.getElementById('reportActionTitle'); 
     const content = document.getElementById('reportActionContent'); 
     const getTypeSelect = (id, currentVal) => `<div><label class="block text-xs text-gray-500 mb-1">方式</label><select id="${id}" class="w-full p-2 border rounded bg-white"><option value="cash" ${currentVal === 'cash' ? 'selected' : ''}>💵 現金</option><option value="transfer" ${currentVal === 'transfer' ? 'selected' : ''}>🏦 匯款</option><option value="linepay" ${currentVal === 'linepay' ? 'selected' : ''}>🟢 LinePay</option><option value="dad" ${currentVal === 'dad' ? 'selected' : ''}>👴 匯給爸爸</option></select></div>`;
     
-    // 新增：樓層輸入框 HTML
     const getFloorInput = (id, val) => `<div><label class="block text-xs text-gray-500 mb-1">樓層/戶號</label><input type="text" id="${id}" value="${val || ''}" class="w-full p-2 border rounded bg-white" placeholder="例如：5F"></div>`;
 
     if(recordId) { 
@@ -359,7 +419,7 @@ window.openReportAction = function(address, year, month, recordId, date, amount,
     } else { 
         const cust = window.appState.customers.find(c => c.address === address); 
         const defAmount = cust ? cust.amount : ''; 
-        const defFloor = cust ? cust.floor : ''; // 預設帶入客戶設定的樓層
+        const defFloor = cust ? cust.floor : ''; 
         const today = new Date().toISOString().split('T')[0]; 
         title.innerText = `補登紀錄：${address} (${month}月)`; 
         content.innerHTML = `
@@ -376,20 +436,18 @@ window.openReportAction = function(address, year, month, recordId, date, amount,
 };
 window.closeReportActionModal = function(e) { if(e && e.target !== e.currentTarget) return; document.getElementById('reportActionModal').classList.add('hidden'); };
 
-// 更新寫入邏輯：接收 floor 參數
 window.addReportRecord = async function(address, year, month, amount, type, floor) { if(!currentUser) return; const record = { date: new Date().toISOString().split('T')[0], address: address, amount: amount, floor: floor || '', months: `${year}年 ${month}月`, note: '補登', type: type || 'cash', category: 'stairs', collector: window.appState.currentCollector, status: 'completed', createdAt: serverTimestamp() }; const cust = window.appState.customers.find(c => c.address === address); if(cust) { if(cust.category) record.category = cust.category; } try { await addDoc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'records'), record); window.closeReportActionModal(null); window.showToast("✅ 已補登"); } catch(e) { window.showToast("補登失敗"); } };
 
-// 更新修改邏輯：接收 floor 參數
 window.updateReportRecord = async function(docId, date, amount, type, floor) { if(!currentUser) return; try { await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'records', docId), { date: date, amount: parseInt(amount), type: type, floor: floor }); window.closeReportActionModal(null); window.showToast("已更新"); } catch(e) { window.showToast("更新失敗"); } };
 
 window.deleteReportRecord = async function(docId) { if(!currentUser) return; if(confirm("確定刪除？這月份將變回未收狀態")) { await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'records', docId)); window.closeReportActionModal(null); window.showToast("🗑️ 已刪除"); } };
 
-// --- 8. UI RENDERING ---
+// --- 9. UI Rendering (Lists) ---
+
 window.renderPendingList = function() { const list = document.getElementById('pendingList'); const container = document.getElementById('pendingContainer'); const current = window.appState.currentCollector; const items = window.appState.pending.filter(i => (i.collector === current) || (!i.collector && current === '子晴') ); if (items.length === 0) { container.classList.add('hidden'); return; } container.classList.remove('hidden'); document.getElementById('pendingCount').innerText = items.length; list.innerHTML = ''; items.forEach(item => { const floorId = `p-floor-${item.id}`; const monthsId = `p-months-${item.id}`; const noteId = `p-note-${item.id}`; const typeId = `p-type-${item.id}`; const catIcon = item.category === 'tank' ? '<span class="text-cyan-600">💧</span>' : '<span class="text-orange-600">🪜</span>'; let sTag = ''; if(item.serviceDate) { sTag = `<span class="text-xs bg-cyan-100 text-cyan-700 px-1 rounded ml-1 font-bold">洗:${item.serviceDate.slice(5)}</span>`; } const div = document.createElement('div'); div.className = 'bg-white p-3 rounded-xl border border-gray-200 shadow-sm relative'; div.innerHTML = ` <div class="flex justify-between items-start mb-2"> <div class="flex items-center gap-2"> <div class="text-xl">${catIcon}</div> <div> <div class="font-bold text-lg text-gray-800 flex items-center">${item.address} ${sTag}</div> </div> </div> <div class="font-bold text-emerald-600 text-lg">$${item.amount}</div> </div> <div class="space-y-2"> <div class="flex gap-2"> <input id="${monthsId}" value="${item.months || ''}" readonly onclick="openPendingMonthPicker('${item.id}', '${item.months||''}')" placeholder="選擇月份" class="bg-blue-50 border border-blue-200 rounded p-2 text-sm w-1/2 text-center text-blue-700 font-bold cursor-pointer"> <input id="${floorId}" value="${item.floor || ''}" placeholder="樓層/戶號" class="bg-gray-50 border rounded p-2 text-sm w-1/2 text-center font-medium"> </div> <div class="flex gap-2 items-center"> <select id="${typeId}" class="bg-gray-50 border rounded p-2 text-sm w-20"> <option value="cash" ${item.type === 'cash' ? 'selected' : ''}>現金</option> <option value="transfer" ${item.type === 'transfer' ? 'selected' : ''}>匯款</option> <option value="linepay" ${item.type === 'linepay' ? 'selected' : ''}>LinePay</option> <option value="dad" ${item.type === 'dad' ? 'selected' : ''}>匯給爸爸</option> </select> <input id="${noteId}" value="${item.note || ''}" placeholder="備註..." class="bg-gray-50 border rounded p-2 text-sm flex-1"> <button onclick="openConfirmCollectionModal('${item.id}', ${item.amount}, '${item.address}', '${item.category || 'stairs'}', '${item.serviceDate || ''}')" class="bg-green-500 text-white w-10 h-10 rounded-full shadow flex items-center justify-center active:scale-90 transition-transform flex-shrink-0"> <i class="fa-solid fa-check"></i> </button> </div> </div> <button onclick="deletePending('${item.id}')" class="absolute top-2 right-2 text-gray-300 hover:text-red-400 p-1"><i class="fa-solid fa-times"></i></button> `; list.appendChild(div); }); };
 window.renderRecords = function() { const list = document.getElementById('recordList'); const records = window.appState.records.filter(r => { const rCol = r.collector || '子晴'; return rCol === window.appState.currentCollector; }); list.innerHTML = ''; document.getElementById('recordCount').innerText = records.length; if (records.length === 0) { list.innerHTML = `<div class="text-center text-gray-400 py-12 opacity-60"><i class="fa-solid fa-clipboard-list text-4xl mb-3"></i><p>尚無 ${window.appState.currentCollector} 的紀錄</p></div>`; return; } records.forEach(record => { let tagClass = 'tag-cash'; let tagText = '現金'; if(record.type === 'transfer') { tagClass = 'tag-transfer'; tagText = '匯款'; } else if(record.type === 'linepay') { tagClass = 'tag-linepay'; tagText = 'LinePay'; } else if(record.type === 'dad') { tagClass = 'tag-dad'; tagText = '已匯給爸爸'; } let noteHtml = record.note ? `<div class="text-sm mt-2 p-2 rounded-lg border border-gray-100 bg-gray-50 text-gray-600 flex items-center gap-2"><i class="fa-regular fa-comment-dots"></i> <span>${record.note}</span></div>` : ''; const dateObj = new Date(record.date); const displayDate = `${dateObj.getMonth()+1}/${dateObj.getDate()}`; let sTag = ''; if(record.category === 'tank') sTag = `<span class="text-xs font-bold px-2 py-0.5 rounded-full tag-tank flex items-center gap-1">💧 洗水塔</span>`; else sTag = `<span class="text-xs font-bold px-2 py-0.5 rounded-full tag-stairs flex items-center gap-1">🪜 洗樓梯</span>`; let serviceTag = ''; if(record.serviceDate) { const sDate = new Date(record.serviceDate); const sDateStr = `${sDate.getMonth()+1}/${sDate.getDate()}`; serviceTag = `<span class="text-xs font-bold px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-700 flex items-center gap-1 ml-1"><i class="fa-solid fa-soap"></i> 洗:${sDateStr}</span>`; } let statusHtml = ''; if(record.status === 'no_receipt') { statusHtml = `<div class="mt-2 bg-red-50 p-2 rounded-lg border border-red-200 flex justify-between items-center"><span class="text-xs font-bold text-red-600"><i class="fa-solid fa-triangle-exclamation"></i> 待給收據</span><button onclick="updateRecordStatus('${record.id}', 'completed')" class="px-3 py-1 bg-red-500 text-white text-xs rounded-full shadow active:scale-95">已補單</button></div>`; } else if(record.status === 'no_payment') { statusHtml = `<div class="mt-2 bg-orange-50 p-2 rounded-lg border border-orange-200 flex justify-between items-center"><span class="text-xs font-bold text-orange-600"><i class="fa-solid fa-hourglass-half"></i> 待確認匯款</span><button onclick="updateRecordStatus('${record.id}', 'completed')" class="px-3 py-1 bg-orange-500 text-white text-xs rounded-full shadow active:scale-95">款項已入</button></div>`; } const item = document.createElement('div'); item.className = 'card p-4 relative border-l-4 ' + (record.type === 'cash' ? 'border-gray-400' : 'border-gray-300'); item.innerHTML = ` <div class="flex justify-between items-start"> <div class="flex-1 mr-2"> <div class="flex items-center gap-2 mb-1 flex-wrap"> <span class="text-xs font-bold text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">${displayDate}</span> ${sTag} ${serviceTag} <span class="text-xs font-bold px-2 py-0.5 rounded-full ${tagClass} flex items-center gap-1">${tagText}</span> </div> <div class="text-xl font-bold text-gray-800 leading-tight mb-1">${record.address} <span class="text-base font-normal text-gray-500 ml-1">${record.floor || ''}</span></div> <div class="text-sm text-blue-600 font-bold bg-blue-50 inline-block px-2 py-0.5 rounded border border-blue-100"><i class="fa-regular fa-calendar-check mr-1"></i> ${record.months || '未填月份'}</div> </div> <div class="text-right"><div class="text-2xl font-bold font-mono text-gray-800">$${record.amount.toLocaleString()}</div></div> </div> ${statusHtml} ${noteHtml} <button onclick="deleteRecord('${record.id}')" class="absolute top-2 right-2 text-gray-200 hover:text-red-400 p-2"><i class="fa-solid fa-trash-can"></i></button> `; list.appendChild(item); }); };
-window.openConfirmCollectionModal = function(id, amount, address, category, serviceDate) { const floor = document.getElementById(`p-floor-${id}`).value; const months = document.getElementById(`p-months-${id}`).value; const note = document.getElementById(`p-note-${id}`).value; const type = document.getElementById(`p-type-${id}`).value; window.appState.currentPendingAction = { id, amount, address, category, floor, months, note, type }; document.getElementById('confirmModalAddress').innerText = address; document.getElementById('confirmModalMonths').value = months; document.getElementById('confirmModalAmount').innerText = `$${amount}`; document.getElementById('confirmModalNote').value = note || ''; const today = new Date().toISOString().split('T')[0]; document.getElementById('confirmModalDate').value = today; document.getElementById('confirmModalServiceDate').value = serviceDate || ''; document.getElementById('confirmModalType').value = type; window.setModalStatus('completed'); document.getElementById('confirmCollectionModal').classList.remove('hidden'); document.getElementById('confirmCollectionBtn').onclick = doConfirmCollection; };
-window.closeConfirmCollectionModal = function(e) { if(e && e.target !== e.currentTarget) return; document.getElementById('confirmCollectionModal').classList.add('hidden'); };
-window.doConfirmCollection = function() { const action = window.appState.currentPendingAction; if(!action) return; const date = document.getElementById('confirmModalDate').value; const serviceDate = document.getElementById('confirmModalServiceDate').value; const months = document.getElementById('confirmModalMonths').value; const type = document.getElementById('confirmModalType').value; const status = document.getElementById('modalInputStatus').value; const note = document.getElementById('confirmModalNote').value; if(!date) { alert("請選擇收款日期"); return; } window.completePending(action.id, { date: date, serviceDate: serviceDate, amount: action.amount, address: action.address, floor: action.floor, months: months, note: note, type: type, category: action.category, status: status }); closeConfirmCollectionModal(null); };
+
+// --- 10. Helper Functions (Status, Print, etc.) ---
 window.setStatus = function(status) { const input = document.getElementById('inputStatus'); if (input.value === status) input.value = 'completed'; else input.value = status; const current = input.value; const btnReceipt = document.getElementById('btn-status-receipt'); const btnPayment = document.getElementById('btn-status-payment'); const baseClass = 'status-btn flex-1 p-2 rounded-lg font-bold border flex justify-center items-center gap-1 transition-all'; btnReceipt.className = baseClass + ' bg-red-50 text-red-500 border-red-200'; btnPayment.className = baseClass + ' bg-orange-50 text-orange-500 border-orange-200'; if(current === 'no_receipt') { btnReceipt.className = baseClass + ' active active-red bg-red-100 border-red-400 text-red-700'; } else if(current === 'no_payment') { btnPayment.className = baseClass + ' active active-orange bg-orange-100 border-orange-400 text-orange-700'; } else { btnReceipt.style.opacity = '0.6'; btnReceipt.style.filter = 'grayscale(1)'; btnPayment.style.opacity = '0.6'; btnPayment.style.filter = 'grayscale(1)'; return; } btnReceipt.style.opacity = '1'; btnReceipt.style.filter = 'none'; btnPayment.style.opacity = '1'; btnPayment.style.filter = 'none'; if (current === 'no_receipt') { btnPayment.style.opacity = '0.6'; btnPayment.style.filter = 'grayscale(1)'; } else if (current === 'no_payment') { btnReceipt.style.opacity = '0.6'; btnReceipt.style.filter = 'grayscale(1)'; } };
 window.setModalStatus = function(status) { const input = document.getElementById('modalInputStatus'); if (input.value === status) input.value = 'completed'; else input.value = status; const current = input.value; const btnReceipt = document.getElementById('modal-status-receipt'); const btnPayment = document.getElementById('modal-status-payment'); const baseClass = 'status-btn flex-1 p-2 rounded-lg font-bold border flex justify-center items-center gap-1 transition-all'; btnReceipt.className = baseClass + ' bg-red-50 text-red-500 border-red-200'; btnPayment.className = baseClass + ' bg-orange-50 text-orange-500 border-orange-200'; if(current === 'no_receipt') { btnReceipt.className = baseClass + ' active active-red bg-red-100 border-red-400 text-red-700'; } else if(current === 'no_payment') { btnPayment.className = baseClass + ' active active-orange bg-orange-100 border-orange-400 text-orange-700'; } else { btnReceipt.style.opacity = '0.6'; btnReceipt.style.filter = 'grayscale(1)'; btnPayment.style.opacity = '0.6'; btnPayment.style.filter = 'grayscale(1)'; return; } btnReceipt.style.opacity = '1'; btnReceipt.style.filter = 'none'; btnPayment.style.opacity = '1'; btnPayment.style.filter = 'none'; if (current === 'no_receipt') { btnPayment.style.opacity = '0.6'; btnPayment.style.filter = 'grayscale(1)'; } else if (current === 'no_payment') { btnReceipt.style.opacity = '0.6'; btnReceipt.style.filter = 'grayscale(1)'; } };
 window.changeYear = function(delta) { window.appState.pickerYear += delta; window.renderMonthPicker(); const addr = document.getElementById('inputAddress').value; if(addr) window.checkPaidStatus(addr); };
@@ -422,7 +480,6 @@ window.closeAddCustomerModal = function(e) { if(e && e.target !== e.currentTarge
 window.openCustomerSelect = function() { window.renderCustomerSelect(); document.getElementById('customerModal').classList.remove('hidden'); };
 window.closeCustomerSelect = function(e) { if(e && e.target !== e.currentTarget) return; document.getElementById('customerModal').classList.add('hidden'); };
 
-// --- 9. 程式啟動 ---
 window.onload = function() {
     const today = new Date();
     const dateStr = today.toISOString().split('T')[0];
@@ -430,10 +487,7 @@ window.onload = function() {
     document.getElementById('headerDate').innerText = `${today.getMonth() + 1}/${today.getDate()} (週${['日','一','二','三','四','五','六'][today.getDay()]})`;
     const savedSalary = localStorage.getItem('cleaning_app_salary');
     if(savedSalary) document.getElementById('mySalary').value = savedSalary;
-    
-    if(document.getElementById('inputServiceType')) {
-        window.setServiceCategory('stairs');
-    }
+    if(document.getElementById('inputServiceType')) { window.setServiceCategory('stairs'); }
     window.setCollector('子晴');
     window.renderMonthPicker();
 };
