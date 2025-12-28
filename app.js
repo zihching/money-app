@@ -20,7 +20,6 @@ window.appState = {
     reportCategory: 'all', 
     pendingMonthTargetId: null,
     currentView: 'entry',
-    // 新增：年報補登用的暫存月份 (Set 結構自動過濾重複)
     reportBatchMonths: new Set()
 };
 
@@ -78,12 +77,10 @@ function setupListeners() {
             return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
         });
         window.appState.records = recs;
-        
         if(window.appState.currentView === 'entry') window.renderRecords();
         if(window.appState.currentView === 'settle') window.updateSummary();
         if(window.appState.currentView === 'report') window.renderYearlyReport();
         if(window.appState.currentView === 'settings') window.renderCustomerSettings();
-        
         const addr = document.getElementById('inputAddress');
         if(addr && addr.value) window.checkPaidStatus(addr.value);
     });
@@ -92,7 +89,6 @@ function setupListeners() {
     onSnapshot(qCust, (snapshot) => {
         let custs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         custs.sort((a, b) => (a.order || 0) - (b.order || 0));
-        
         window.appState.customers = custs;
         if(window.appState.currentView === 'settings') window.renderCustomerSettings();
         if(!document.getElementById('customerModal').classList.contains('hidden')) window.renderCustomerSelect();
@@ -117,13 +113,11 @@ window.openManageCustomerModal = function() {
     
     window.sortableInstance = new Sortable(el, {
         handle: '.handle', 
-        filter: '.ignore-drag', // 確保刪除按鈕不被拖拽影響
+        filter: '.ignore-drag', 
         preventOnFilter: false, 
         animation: 150,
         ghostClass: 'bg-blue-50', 
-        onEnd: function (evt) {
-            window.saveNewOrder(); 
-        },
+        onEnd: function (evt) { window.saveNewOrder(); },
     });
 };
 
@@ -135,31 +129,24 @@ window.closeManageCustomerModal = function(e) {
 window.renderManageCustomerList = function() {
     const list = document.getElementById('manageCustomerList');
     if(!list) return;
-    
     const current = window.appState.currentCollector;
     const catFilter = window.appState.reportCategory || 'all'; 
-
     const custs = window.appState.customers.filter(c => {
         if(!((c.collector === current) || (!c.collector && current === '子晴'))) return false;
         const cCat = c.category || 'stairs';
         if(catFilter !== 'all' && cCat !== catFilter) return false;
         return true;
     });
-
     list.innerHTML = '';
     if(custs.length === 0) { list.innerHTML = '<div class="text-center text-gray-400 mt-4">無資料</div>'; return; }
-
     custs.forEach((c) => {
         const catIcon = (c.category || 'stairs') === 'tank' ? '💧' : '🪜';
         const div = document.createElement('div');
         div.setAttribute('data-id', c.id);
         div.className = 'flex items-center justify-between p-3 bg-white border border-gray-100 mb-2 rounded-lg shadow-sm';
-        
         div.innerHTML = `
             <div class="flex items-center gap-3 overflow-hidden">
-                <div class="handle cursor-move p-2 touch-none">
-                    <i class="fa-solid fa-bars text-gray-400 text-lg"></i>
-                </div>
+                <div class="handle cursor-move p-2 touch-none"><i class="fa-solid fa-bars text-gray-400 text-lg"></i></div>
                 <div class="flex-1">
                     <div class="font-bold text-gray-800 text-sm truncate">${catIcon} ${c.address}</div>
                     <div class="text-xs text-gray-400">$${c.amount}</div>
@@ -171,9 +158,7 @@ window.renderManageCustomerList = function() {
     });
 };
 
-window.deleteCustomerInManager = function(id) {
-    window.deleteCustomer(id);
-};
+window.deleteCustomerInManager = function(id) { window.deleteCustomer(id); };
 
 window.saveNewOrder = async function() {
     if(!currentUser) return;
@@ -187,10 +172,7 @@ window.saveNewOrder = async function() {
         batch.update(ref, { order: index });
         hasUpdates = true;
     });
-    if(hasUpdates) {
-        try { await batch.commit(); } 
-        catch(e) { console.error("Order update failed", e); window.showToast("排序儲存失敗"); }
-    }
+    if(hasUpdates) { try { await batch.commit(); } catch(e) { console.error("Order update failed", e); window.showToast("排序儲存失敗"); } }
 };
 
 window.managerAddCustomer = async function() {
@@ -202,8 +184,7 @@ window.managerAddCustomer = async function() {
     let maxOrder = 0;
     window.appState.customers.forEach(c => { if(c.order && c.order > maxOrder) maxOrder = c.order; });
     const data = {
-        address: addr, amount: amt, category: cat,
-        collector: window.appState.currentCollector,
+        address: addr, amount: amt, category: cat, collector: window.appState.currentCollector,
         createdAt: serverTimestamp(), order: maxOrder + 1 
     };
     try {
@@ -214,8 +195,7 @@ window.managerAddCustomer = async function() {
     } catch(e) { window.showToast("新增失敗"); }
 };
 
-// --- Window Functions (View Switch & Basic Write) ---
-
+// --- Window Functions ---
 window.setReportCategory = function(cat) {
     window.appState.reportCategory = cat;
     const btns = { 'all': 'rep-cat-all', 'stairs': 'rep-cat-stairs', 'tank': 'rep-cat-tank' };
@@ -370,17 +350,15 @@ window.renderYearlyReport = function() {
         return true;
     });
 
-    // 使用已經排序好的 custs 順序
-    let sortedAddresses = [];
-    custs.forEach(c => sortedAddresses.push(c.address));
-    records.forEach(r => { if(!sortedAddresses.includes(r.address)) sortedAddresses.push(r.address); });
+    const addresses = custs.map(c => c.address);
+    records.forEach(r => { if(!addresses.includes(r.address)) addresses.push(r.address); });
 
-    if(sortedAddresses.length === 0) { 
+    if(addresses.length === 0) { 
         container.innerHTML = '<div class="text-center text-gray-400 py-10">尚無資料</div>'; 
         return; 
     } 
 
-    sortedAddresses.forEach(addr => { 
+    addresses.forEach(addr => { 
         const monthInfo = Array(13).fill(null); 
         const addrRecords = window.appState.records.filter(r => r.address === addr); 
         
@@ -402,7 +380,8 @@ window.renderYearlyReport = function() {
                             monthInfo[m] = { 
                                 status: status, date: collectDate, id: r.id, 
                                 amount: r.amount, fullDate: r.date, 
-                                type: r.type || 'cash', floor: r.floor || '' 
+                                type: r.type || 'cash', floor: r.floor || '',
+                                note: r.note || '' // 讀取備註
                             }; 
                         } 
                     }); 
@@ -418,20 +397,25 @@ window.renderYearlyReport = function() {
             const info = monthInfo[m]; 
             let boxClass = 'border border-gray-100 bg-gray-50 rounded p-2 flex flex-col justify-between min-h-[70px] relative transition-all active:scale-95';
             let content = `<span class="text-xs text-gray-300 font-bold absolute top-1 right-2">${m}月</span>`; 
-            // 空格子 -> 觸發批次補登
             let onclick = `openReportAction('add', '${addr}', ${year}, ${m})`; 
 
             if(info) { 
-                // 有資料 -> 觸發單筆編輯
-                onclick = `openReportAction('edit', '${addr}', ${year}, ${m}, '${info.id}', '${info.fullDate}', ${info.amount}, '${info.type}', '${info.floor}')`; 
+                // 將備註傳入編輯視窗 (如果有單引號要小心，這裡簡單處理)
+                const safeNote = (info.note || '').replace(/'/g, "\\'");
+                onclick = `openReportAction('edit', '${addr}', ${year}, ${m}, '${info.id}', '${info.fullDate}', ${info.amount}, '${info.type}', '${info.floor}', '${safeNote}')`; 
+                
                 let typeText = '💵 現金'; let typeBg = 'bg-emerald-50 text-emerald-700';
                 if(info.type === 'transfer') { typeText = '🏦 匯款'; typeBg = 'bg-blue-50 text-blue-700'; }
                 if(info.type === 'linepay') { typeText = '🟢 LP'; typeBg = 'bg-lime-50 text-lime-700'; }
                 if(info.type === 'dad') { typeText = '👴 匯爸'; typeBg = 'bg-purple-50 text-purple-700'; }
                 let borderClass = 'border-emerald-200 bg-white';
                 if(info.status === 'warning') borderClass = 'border-orange-300 bg-orange-50';
+                
+                // 如果有備註，顯示一個小圖示
+                let noteIcon = info.note ? `<i class="fa-solid fa-note-sticky text-yellow-500 text-[10px] ml-1"></i>` : '';
+
                 boxClass = `border ${borderClass} rounded p-2 flex flex-col justify-between min-h-[70px] relative shadow-sm cursor-pointer active:scale-95`;
-                content = `<div class="flex justify-between items-start mb-1"><span class="text-xs font-bold text-gray-400">${m}月</span><span class="text-[10px] px-1 rounded ${typeBg}">${typeText}</span></div><div class="flex justify-between items-end"><div><div class="text-[10px] text-gray-500">${info.date}收</div><div class="text-xs font-bold text-gray-700">${info.floor ? info.floor : ''}</div></div><div class="font-bold text-emerald-600 text-sm">$${info.amount}</div></div>`;
+                content = `<div class="flex justify-between items-start mb-1"><span class="text-xs font-bold text-gray-400 flex items-center">${m}月${noteIcon}</span><span class="text-[10px] px-1 rounded ${typeBg}">${typeText}</span></div><div class="flex justify-between items-end"><div><div class="text-[10px] text-gray-500">${info.date}收</div><div class="text-xs font-bold text-gray-700">${info.floor ? info.floor : ''}</div></div><div class="font-bold text-emerald-600 text-sm">$${info.amount}</div></div>`;
             } 
             monthHtml += `<div class="${boxClass}" onclick="${onclick}">${content}</div>`; 
         } 
@@ -440,20 +424,25 @@ window.renderYearlyReport = function() {
     }); 
 };
 
-// --- Modal Functions (Batch Add & Edit) ---
+// --- Modal Functions (Batch Add & Edit with Note) ---
 
-window.openReportAction = function(mode, address, year, month, recordId, date, amount, type, floor) { 
+window.openReportAction = function(mode, address, year, month, recordId, date, amount, type, floor, note) { 
     const title = document.getElementById('reportActionTitle'); 
     const content = document.getElementById('reportActionContent'); 
     const getTypeSelect = (id, currentVal) => `<div><label class="block text-xs text-gray-500 mb-1">方式</label><select id="${id}" class="w-full p-2 border rounded bg-white"><option value="cash" ${currentVal === 'cash' ? 'selected' : ''}>💵 現金</option><option value="transfer" ${currentVal === 'transfer' ? 'selected' : ''}>🏦 匯款</option><option value="linepay" ${currentVal === 'linepay' ? 'selected' : ''}>🟢 LinePay</option><option value="dad" ${currentVal === 'dad' ? 'selected' : ''}>👴 匯給爸爸</option></select></div>`;
     const getFloorInput = (id, val) => `<div><label class="block text-xs text-gray-500 mb-1">樓層/戶號</label><input type="text" id="${id}" value="${val || ''}" class="w-full p-2 border rounded bg-white" placeholder="例如：5F"></div>`;
+    // 新增：備註輸入框
+    const getNoteInput = (id, val) => `<div><label class="block text-xs text-gray-500 mb-1">備註</label><input type="text" id="${id}" value="${val || ''}" class="w-full p-2 border rounded bg-white" placeholder="備註..."></div>`;
 
     if(mode === 'edit') {
         title.innerText = `編輯紀錄：${address} (${month}月)`; 
         content.innerHTML = ` 
-            <div class="grid grid-cols-2 gap-2 mb-2"><div><label class="block text-xs text-gray-500 mb-1">收款日期</label><input type="date" id="reportEditDate" value="${date}" class="w-full p-2 border rounded"></div>${getFloorInput('reportEditFloor', floor)}</div><div><label class="block text-xs text-gray-500 mb-1">金額</label><input type="number" id="reportEditAmount" value="${amount}" class="w-full p-2 border rounded"></div>${getTypeSelect('reportEditType', type)}<div class="grid grid-cols-2 gap-2 mt-4"><button onclick="deleteReportRecord('${recordId}')" class="py-2 bg-red-100 text-red-600 rounded-lg font-bold">刪除紀錄</button><button onclick="updateReportRecord('${recordId}', document.getElementById('reportEditDate').value, document.getElementById('reportEditAmount').value, document.getElementById('reportEditType').value, document.getElementById('reportEditFloor').value)" class="py-2 bg-blue-600 text-white rounded-lg font-bold">儲存修改</button></div>`; 
+            <div class="grid grid-cols-2 gap-2 mb-2"><div><label class="block text-xs text-gray-500 mb-1">收款日期</label><input type="date" id="reportEditDate" value="${date}" class="w-full p-2 border rounded"></div>${getFloorInput('reportEditFloor', floor)}</div>
+            <div class="grid grid-cols-2 gap-2 mb-2"><div><label class="block text-xs text-gray-500 mb-1">金額</label><input type="number" id="reportEditAmount" value="${amount}" class="w-full p-2 border rounded"></div>${getTypeSelect('reportEditType', type)}</div>
+            ${getNoteInput('reportEditNote', note)}
+            <div class="grid grid-cols-2 gap-2 mt-4"><button onclick="deleteReportRecord('${recordId}')" class="py-2 bg-red-100 text-red-600 rounded-lg font-bold">刪除紀錄</button><button onclick="updateReportRecord('${recordId}', document.getElementById('reportEditDate').value, document.getElementById('reportEditAmount').value, document.getElementById('reportEditType').value, document.getElementById('reportEditFloor').value, document.getElementById('reportEditNote').value)" class="py-2 bg-blue-600 text-white rounded-lg font-bold">儲存修改</button></div>`; 
     } else { 
-        // --- 批次補登介面 ---
+        // --- 批次補登 ---
         const cust = window.appState.customers.find(c => c.address === address); 
         const defAmount = cust ? cust.amount : ''; 
         const defFloor = cust ? cust.floor : ''; 
@@ -478,9 +467,9 @@ window.openReportAction = function(mode, address, year, month, recordId, date, a
                 <div><label class="block text-xs text-gray-500 mb-1">收款日期</label><input type="date" id="reportAddDate" value="${today}" class="w-full p-2 border rounded"></div>
                 ${getFloorInput('reportAddFloor', defFloor)}
             </div>
-            <div><label class="block text-xs text-gray-500 mb-1">金額 (單月)</label><input type="number" id="reportAddAmount" value="${defAmount}" placeholder="輸入金額" class="w-full p-2 border rounded"></div>
-            ${getTypeSelect('reportAddType', 'cash')}
-            <button onclick="batchAddReportRecords('${address}', ${year}, document.getElementById('reportAddAmount').value, document.getElementById('reportAddType').value, document.getElementById('reportAddFloor').value)" class="w-full py-3 bg-emerald-500 text-white rounded-lg font-bold mt-4">確認補登 (<span id="batchCount">1</span>筆)</button>`; 
+            <div class="grid grid-cols-2 gap-2 mb-2"><div><label class="block text-xs text-gray-500 mb-1">金額 (單月)</label><input type="number" id="reportAddAmount" value="${defAmount}" placeholder="輸入金額" class="w-full p-2 border rounded"></div>${getTypeSelect('reportAddType', 'cash')}</div>
+            ${getNoteInput('reportAddNote', '補登')}
+            <button onclick="batchAddReportRecords('${address}', ${year}, document.getElementById('reportAddAmount').value, document.getElementById('reportAddType').value, document.getElementById('reportAddFloor').value, document.getElementById('reportAddNote').value)" class="w-full py-3 bg-emerald-500 text-white rounded-lg font-bold mt-4">確認補登 (<span id="batchCount">1</span>筆)</button>`; 
     } 
     document.getElementById('reportActionModal').classList.remove('hidden'); 
 };
@@ -496,8 +485,8 @@ window.toggleBatchMonth = function(btn, m) {
     document.getElementById('batchCount').innerText = window.appState.reportBatchMonths.size;
 };
 
-// --- 批次寫入 (Batch Write) ---
-window.batchAddReportRecords = async function(address, year, amount, type, floor) { 
+// --- 批次寫入 (含備註) ---
+window.batchAddReportRecords = async function(address, year, amount, type, floor, note) { 
     if(!currentUser) return; 
     if(window.appState.reportBatchMonths.size === 0) { alert("請至少選擇一個月份"); return; }
     const dateInput = document.getElementById('reportAddDate').value;
@@ -506,7 +495,8 @@ window.batchAddReportRecords = async function(address, year, amount, type, floor
         const ref = doc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'records'));
         const record = { 
             date: dateInput, address: address, amount: parseInt(amount), floor: floor || '', 
-            months: `${year}年 ${m}月`, note: '補登', type: type || 'cash', 
+            months: `${year}年 ${m}月`, note: note || '補登', // 這裡存入備註
+            type: type || 'cash', 
             category: window.appState.reportCategory === 'all' ? 'stairs' : window.appState.reportCategory, 
             collector: window.appState.currentCollector, status: 'completed', createdAt: serverTimestamp() 
         }; 
@@ -520,7 +510,19 @@ window.batchAddReportRecords = async function(address, year, amount, type, floor
 };
 
 window.closeReportActionModal = function(e) { if(e && e.target !== e.currentTarget) return; document.getElementById('reportActionModal').classList.add('hidden'); };
-window.updateReportRecord = async function(docId, date, amount, type, floor) { if(!currentUser) return; try { await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'records', docId), { date: date, amount: parseInt(amount), type: type, floor: floor }); window.closeReportActionModal(null); window.showToast("已更新"); } catch(e) { window.showToast("更新失敗"); } };
+
+// --- 更新紀錄 (含備註) ---
+window.updateReportRecord = async function(docId, date, amount, type, floor, note) { 
+    if(!currentUser) return; 
+    try { 
+        await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'records', docId), { 
+            date: date, amount: parseInt(amount), type: type, floor: floor, note: note // 更新備註
+        }); 
+        window.closeReportActionModal(null); 
+        window.showToast("已更新"); 
+    } catch(e) { window.showToast("更新失敗"); } 
+};
+
 window.deleteReportRecord = async function(docId) { if(!currentUser) return; if(confirm("確定刪除？這月份將變回未收狀態")) { await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'records', docId)); window.closeReportActionModal(null); window.showToast("🗑️ 已刪除"); } };
 
 // --- 8. UI RENDERING (Lists) ---
