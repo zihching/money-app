@@ -20,7 +20,6 @@ window.appState = {
     reportCategory: 'all', 
     pendingMonthTargetId: null,
     currentView: 'entry',
-    // 新增：年報補登用的暫存月份
     reportBatchMonths: new Set()
 };
 
@@ -91,7 +90,6 @@ function setupListeners() {
     const qCust = query(customersRef, orderBy('createdAt', 'desc'));
     onSnapshot(qCust, (snapshot) => {
         let custs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        // 依 Order 排序
         custs.sort((a, b) => (a.order || 0) - (b.order || 0));
         
         window.appState.customers = custs;
@@ -113,12 +111,14 @@ window.openManageCustomerModal = function() {
     window.renderManageCustomerList();
     document.getElementById('manageCustomerModal').classList.remove('hidden');
     
-    // 初始化拖拽功能
     const el = document.getElementById('manageCustomerList');
     if(window.sortableInstance) window.sortableInstance.destroy(); 
     
+    // 關鍵修復：設定 filter 讓刪除按鈕可以被點擊
     window.sortableInstance = new Sortable(el, {
         handle: '.handle', 
+        filter: '.ignore-drag', // 忽略這個 class 的元素 (不進行拖拽)
+        preventOnFilter: false, // 允許點擊被過濾的元素 (重要!)
         animation: 150,
         ghostClass: 'bg-blue-50', 
         onEnd: function (evt) {
@@ -149,7 +149,7 @@ window.renderManageCustomerList = function() {
     list.innerHTML = '';
     if(custs.length === 0) { list.innerHTML = '<div class="text-center text-gray-400 mt-4">無資料</div>'; return; }
 
-    custs.forEach((c, index) => {
+    custs.forEach((c) => {
         const catIcon = (c.category || 'stairs') === 'tank' ? '💧' : '🪜';
         const div = document.createElement('div');
         div.setAttribute('data-id', c.id);
@@ -165,14 +165,14 @@ window.renderManageCustomerList = function() {
                     <div class="text-xs text-gray-400">$${c.amount}</div>
                 </div>
             </div>
-            <button onclick="deleteCustomerInManager('${c.id}', event)" class="text-gray-300 hover:text-red-500 p-2 z-10"><i class="fa-solid fa-trash-can"></i></button>
+            <button onclick="deleteCustomerInManager('${c.id}')" class="ignore-drag text-gray-300 hover:text-red-500 p-2 z-10"><i class="fa-solid fa-trash-can pointer-events-none"></i></button>
         `;
         list.appendChild(div);
     });
 };
 
-window.deleteCustomerInManager = function(id, event) {
-    if(event) event.stopPropagation(); 
+window.deleteCustomerInManager = function(id) {
+    // 這裡直接呼叫刪除，不需要傳 event 了，因為 Sortable 已經放行了
     window.deleteCustomer(id);
 };
 
@@ -180,18 +180,14 @@ window.saveNewOrder = async function() {
     if(!currentUser) return;
     const list = document.getElementById('manageCustomerList');
     const itemEls = list.children;
-    
     const batch = writeBatch(db);
     let hasUpdates = false;
-
     const currentIds = Array.from(itemEls).map(el => el.getAttribute('data-id'));
-    
     currentIds.forEach((id, index) => {
         const ref = doc(db, 'artifacts', APP_ID, 'public', 'data', 'customers', id);
         batch.update(ref, { order: index });
         hasUpdates = true;
     });
-
     if(hasUpdates) {
         try { await batch.commit(); } 
         catch(e) { console.error("Order update failed", e); window.showToast("排序儲存失敗"); }
@@ -203,18 +199,14 @@ window.managerAddCustomer = async function() {
     const addr = document.getElementById('mgrNewAddr').value.trim();
     const amt = parseInt(document.getElementById('mgrNewAmt').value);
     const cat = window.appState.reportCategory === 'all' ? 'stairs' : window.appState.reportCategory;
-
     if(!addr || isNaN(amt)) { alert("請輸入地址和金額"); return; }
-
     let maxOrder = 0;
     window.appState.customers.forEach(c => { if(c.order && c.order > maxOrder) maxOrder = c.order; });
-
     const data = {
         address: addr, amount: amt, category: cat,
         collector: window.appState.currentCollector,
         createdAt: serverTimestamp(), order: maxOrder + 1 
     };
-
     try {
         await addDoc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'customers'), data);
         document.getElementById('mgrNewAddr').value = '';
@@ -424,15 +416,12 @@ window.renderYearlyReport = function() {
         let monthHtml = ''; 
         for(let m=1; m<=12; m++) { 
             const info = monthInfo[m]; 
-            // 如果是空格子，點擊觸發「補登」 (模式 'add', 帶入該月份)
-            let onclick = `openReportAction('add', '${addr}', ${year}, ${m})`; 
             let boxClass = 'border border-gray-100 bg-gray-50 rounded p-2 flex flex-col justify-between min-h-[70px] relative transition-all active:scale-95';
             let content = `<span class="text-xs text-gray-300 font-bold absolute top-1 right-2">${m}月</span>`; 
+            let onclick = `openReportAction('add', '${addr}', ${year}, ${m})`; 
 
             if(info) { 
-                // 如果有資料，點擊觸發「編輯」 (模式 'edit', 帶入詳細資料)
                 onclick = `openReportAction('edit', '${addr}', ${year}, ${m}, '${info.id}', '${info.fullDate}', ${info.amount}, '${info.type}', '${info.floor}')`; 
-                
                 let typeText = '💵 現金'; let typeBg = 'bg-emerald-50 text-emerald-700';
                 if(info.type === 'transfer') { typeText = '🏦 匯款'; typeBg = 'bg-blue-50 text-blue-700'; }
                 if(info.type === 'linepay') { typeText = '🟢 LP'; typeBg = 'bg-lime-50 text-lime-700'; }
@@ -449,7 +438,7 @@ window.renderYearlyReport = function() {
     }); 
 };
 
-// --- Modal Functions (New Logic for Batch Add) ---
+// --- Modal Functions (Batch Add & Edit) ---
 
 window.openReportAction = function(mode, address, year, month, recordId, date, amount, type, floor) { 
     const title = document.getElementById('reportActionTitle'); 
@@ -458,24 +447,20 @@ window.openReportAction = function(mode, address, year, month, recordId, date, a
     const getFloorInput = (id, val) => `<div><label class="block text-xs text-gray-500 mb-1">樓層/戶號</label><input type="text" id="${id}" value="${val || ''}" class="w-full p-2 border rounded bg-white" placeholder="例如：5F"></div>`;
 
     if(mode === 'edit') {
-        // --- 單筆編輯模式 (維持原樣) ---
         title.innerText = `編輯紀錄：${address} (${month}月)`; 
         content.innerHTML = ` 
             <div class="grid grid-cols-2 gap-2 mb-2"><div><label class="block text-xs text-gray-500 mb-1">收款日期</label><input type="date" id="reportEditDate" value="${date}" class="w-full p-2 border rounded"></div>${getFloorInput('reportEditFloor', floor)}</div><div><label class="block text-xs text-gray-500 mb-1">金額</label><input type="number" id="reportEditAmount" value="${amount}" class="w-full p-2 border rounded"></div>${getTypeSelect('reportEditType', type)}<div class="grid grid-cols-2 gap-2 mt-4"><button onclick="deleteReportRecord('${recordId}')" class="py-2 bg-red-100 text-red-600 rounded-lg font-bold">刪除紀錄</button><button onclick="updateReportRecord('${recordId}', document.getElementById('reportEditDate').value, document.getElementById('reportEditAmount').value, document.getElementById('reportEditType').value, document.getElementById('reportEditFloor').value)" class="py-2 bg-blue-600 text-white rounded-lg font-bold">儲存修改</button></div>`; 
     } else { 
-        // --- 批次補登模式 (新功能) ---
         const cust = window.appState.customers.find(c => c.address === address); 
         const defAmount = cust ? cust.amount : ''; 
         const defFloor = cust ? cust.floor : ''; 
         const today = new Date().toISOString().split('T')[0]; 
         
-        // 初始化選取的月份
         window.appState.reportBatchMonths.clear();
-        window.appState.reportBatchMonths.add(month); // 加入當前點擊的月份
+        window.appState.reportBatchMonths.add(month); 
 
         title.innerText = `補登紀錄：${address}`; 
         
-        // 產生月份選擇器 HTML
         let monthSelectorHtml = '<div class="grid grid-cols-6 gap-2 mb-3">';
         for(let i=1; i<=12; i++) {
             const isSelected = i === month ? 'bg-blue-500 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200';
@@ -511,41 +496,23 @@ window.toggleBatchMonth = function(btn, m) {
 window.batchAddReportRecords = async function(address, year, amount, type, floor) { 
     if(!currentUser) return; 
     if(window.appState.reportBatchMonths.size === 0) { alert("請至少選擇一個月份"); return; }
-    
     const dateInput = document.getElementById('reportAddDate').value;
     const batch = writeBatch(db);
-    
-    // 遍歷選取的月份，每個月份建立一筆紀錄
     window.appState.reportBatchMonths.forEach(m => {
         const ref = doc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'records'));
         const record = { 
-            date: dateInput, 
-            address: address, 
-            amount: parseInt(amount), 
-            floor: floor || '', 
-            months: `${year}年 ${m}月`, // 這裡每個紀錄存單一月份 
-            note: '補登', 
-            type: type || 'cash', 
-            category: window.appState.reportCategory === 'all' ? 'stairs' : window.appState.reportCategory, // 使用當前過濾的分類，避免判斷錯誤
-            collector: window.appState.currentCollector, 
-            status: 'completed', 
-            createdAt: serverTimestamp() 
+            date: dateInput, address: address, amount: parseInt(amount), floor: floor || '', 
+            months: `${year}年 ${m}月`, note: '補登', type: type || 'cash', 
+            category: window.appState.reportCategory === 'all' ? 'stairs' : window.appState.reportCategory, 
+            collector: window.appState.currentCollector, status: 'completed', createdAt: serverTimestamp() 
         }; 
-        
-        // 二次檢查 category (如果是在 'all' 模式下，嘗試從客戶資料抓)
         if(window.appState.reportCategory === 'all') {
              const cust = window.appState.customers.find(c => c.address === address);
              if(cust && cust.category) record.category = cust.category;
         }
-
         batch.set(ref, record);
     });
-
-    try { 
-        await batch.commit(); 
-        window.closeReportActionModal(null); 
-        window.showToast(`✅ 已補登 ${window.appState.reportBatchMonths.size} 筆`); 
-    } catch(e) { console.error(e); window.showToast("補登失敗"); } 
+    try { await batch.commit(); window.closeReportActionModal(null); window.showToast(`✅ 已補登 ${window.appState.reportBatchMonths.size} 筆`); } catch(e) { console.error(e); window.showToast("補登失敗"); } 
 };
 
 window.closeReportActionModal = function(e) { if(e && e.target !== e.currentTarget) return; document.getElementById('reportActionModal').classList.add('hidden'); };
