@@ -249,7 +249,7 @@ function clearFormData() {
     window.setStatus('completed'); 
 }
 
-// --- 7. 報表邏輯 (Year Report) - 已更新：支援修改付款方式 ---
+// --- 7. 報表邏輯 (Year Report) - 已更新：直接顯示詳情 ---
 
 window.changeReportYear = function(delta) { 
     window.appState.reportYear += delta; 
@@ -293,7 +293,9 @@ window.renderYearlyReport = function() {
 
     addresses.forEach(addr => { 
         const monthInfo = Array(13).fill(null); 
-        const addrRecords = window.appState.records.filter(r => r.address === addr); 
+        const addrRecords = window.appState.records.filter(r => r.address === addr);
+        // 用來顯示詳情的陣列
+        const detailList = [];
         
         addrRecords.forEach(r => { 
             const rCat = r.category || 'stairs';
@@ -310,13 +312,26 @@ window.renderYearlyReport = function() {
                         if(m >= 1 && m <= 12) { 
                             let status = 'paid'; 
                             if(r.status === 'no_payment' || r.status === 'no_receipt') { status = 'warning'; } 
-                            // 這裡多存了 type (付款方式)
                             monthInfo[m] = { status: status, date: collectDate, id: r.id, amount: r.amount, fullDate: r.date, type: r.type || 'cash' }; 
                         } 
                     }); 
                 } 
+                
+                // 收集詳情資料 (只要是這一年的)
+                detailList.push({
+                    date: collectDate,
+                    fullDate: r.date,
+                    floor: r.floor || '',
+                    type: r.type || 'cash',
+                    amount: r.amount,
+                    id: r.id,
+                    months: r.months
+                });
             } 
         }); 
+
+        // 依日期排序詳情
+        detailList.sort((a,b) => new Date(a.fullDate) - new Date(b.fullDate));
 
         const card = document.createElement('div'); 
         card.className = 'bg-white p-3 rounded-lg border border-gray-100 shadow-sm'; 
@@ -328,7 +343,6 @@ window.renderYearlyReport = function() {
             let content = m; 
             let onclick = `openReportAction('${addr}', ${year}, ${m}, null, null, null, 'cash')`; 
             if(info) { 
-                // 這裡傳入了 info.type
                 onclick = `openReportAction('${addr}', ${year}, ${m}, '${info.id}', '${info.fullDate}', ${info.amount}, '${info.type}')`; 
                 if(info.status === 'paid') { 
                     className += ' paid'; 
@@ -342,18 +356,50 @@ window.renderYearlyReport = function() {
             } 
             monthHtml += `<div class="${className}" style="height: 36px;" onclick="${onclick}">${content}</div>`; 
         } 
+
+        // 產生詳情列表 HTML
+        let detailsHtml = '';
+        if(detailList.length > 0) {
+            detailsHtml = `<div class="mt-3 pt-2 border-t border-gray-100 space-y-1">`;
+            detailList.forEach(d => {
+                let typeIcon = '💵';
+                if(d.type === 'transfer') typeIcon = '🏦';
+                else if(d.type === 'linepay') typeIcon = '🟢';
+                else if(d.type === 'dad') typeIcon = '👴';
+                
+                detailsHtml += `
+                    <div class="flex justify-between items-center text-xs text-gray-600 bg-gray-50 p-1.5 rounded">
+                        <div class="flex items-center gap-2">
+                            <span class="font-bold text-gray-800 w-10">${d.date}</span>
+                            <span class="bg-white border px-1 rounded text-[10px]">${d.floor}</span>
+                            <span>${d.months}</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <span>${typeIcon}</span>
+                            <span class="font-bold text-emerald-600">$${d.amount}</span>
+                        </div>
+                    </div>
+                `;
+            });
+            detailsHtml += `</div>`;
+        }
         
-        card.innerHTML = ` <div class="font-bold text-gray-700 mb-2 border-b pb-1 text-sm flex justify-between"> <span>${addr}</span> <span class="text-xs text-gray-300 font-normal">#${year}</span> </div> <div class="grid grid-cols-6 gap-2"> ${monthHtml} </div> `; 
+        card.innerHTML = ` 
+            <div class="font-bold text-gray-700 mb-2 border-b pb-1 text-sm flex justify-between"> 
+                <span>${addr}</span> 
+                <span class="text-xs text-gray-300 font-normal">#${year}</span> 
+            </div> 
+            <div class="grid grid-cols-6 gap-2"> ${monthHtml} </div> 
+            ${detailsHtml}
+        `; 
         container.appendChild(card); 
     }); 
 };
 
-// 更新後的 openReportAction：增加了 type (付款方式) 的處理
 window.openReportAction = function(address, year, month, recordId, date, amount, type) { 
     const title = document.getElementById('reportActionTitle'); 
     const content = document.getElementById('reportActionContent'); 
     
-    // 產生付款方式的選單 HTML
     const getTypeSelect = (id, currentVal) => `
         <div>
             <label class="block text-xs text-gray-500 mb-1">方式</label>
@@ -405,7 +451,6 @@ window.openReportAction = function(address, year, month, recordId, date, amount,
 
 window.closeReportActionModal = function(e) { if(e && e.target !== e.currentTarget) return; document.getElementById('reportActionModal').classList.add('hidden'); };
 
-// 更新：addReportRecord 接收 type
 window.addReportRecord = async function(address, year, month, amount, type) { 
     if(!currentUser) return; 
     const record = { 
@@ -415,7 +460,7 @@ window.addReportRecord = async function(address, year, month, amount, type) {
         floor: '', 
         months: `${year}年 ${month}月`, 
         note: '補登', 
-        type: type || 'cash', // 存入 type
+        type: type || 'cash', 
         category: 'stairs', 
         collector: window.appState.currentCollector, 
         status: 'completed', 
@@ -434,14 +479,13 @@ window.addReportRecord = async function(address, year, month, amount, type) {
     } catch(e) { window.showToast("補登失敗"); } 
 };
 
-// 更新：updateReportRecord 接收 type
 window.updateReportRecord = async function(docId, date, amount, type) { 
     if(!currentUser) return; 
     try { 
         await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'records', docId), { 
             date: date, 
             amount: parseInt(amount),
-            type: type // 更新 type
+            type: type 
         }); 
         window.closeReportActionModal(null); 
         window.showToast("已更新"); 
