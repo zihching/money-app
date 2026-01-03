@@ -73,19 +73,13 @@ function setupListeners() {
     onSnapshot(qRec, (snapshot) => {
         let recs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         recs.sort((a, b) => {
+            // 排序優化：日期新 -> 舊，同日期則後建 -> 先建
             if (a.date > b.date) return -1;
             if (a.date < b.date) return 1;
             return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
         });
         window.appState.records = recs;
-        
-        if(window.appState.currentView === 'entry') window.renderRecords();
-        if(window.appState.currentView === 'settle') window.updateSummary();
-        if(window.appState.currentView === 'report') window.renderYearlyReport();
-        if(window.appState.currentView === 'settings') window.renderCustomerSettings();
-        
-        const addr = document.getElementById('inputAddress');
-        if(addr && addr.value) window.checkPaidStatus(addr.value);
+        refreshCurrentView(); // 統一刷新畫面
     });
 
     const qCust = query(customersRef, orderBy('createdAt', 'desc'));
@@ -93,10 +87,7 @@ function setupListeners() {
         let custs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         custs.sort((a, b) => (a.order || 0) - (b.order || 0));
         window.appState.customers = custs;
-        if(window.appState.currentView === 'settings') window.renderCustomerSettings();
-        if(!document.getElementById('customerModal').classList.contains('hidden')) window.renderCustomerSelect();
-        if(!document.getElementById('manageCustomerModal').classList.contains('hidden')) window.renderManageCustomerList();
-        if(window.appState.currentView === 'report') window.renderYearlyReport();
+        refreshCurrentView();
     });
 
     const qPending = query(pendingRef, orderBy('createdAt', 'desc'));
@@ -105,21 +96,28 @@ function setupListeners() {
         window.renderPendingList();
     });
 }
-// --- 4. 排序與管理功能 (Drag & Drop) ---
+
+function refreshCurrentView() {
+    if(window.appState.currentView === 'entry') { window.renderRecords(); }
+    if(window.appState.currentView === 'settle') { window.updateSummary(); }
+    if(window.appState.currentView === 'report') { window.renderYearlyReport(); }
+    if(window.appState.currentView === 'settings') { window.renderCustomerSettings(); }
+    if(!document.getElementById('customerModal').classList.contains('hidden')) { window.renderCustomerSelect(); }
+    if(!document.getElementById('manageCustomerModal').classList.contains('hidden')) { window.renderManageCustomerList(); }
+    
+    const addr = document.getElementById('inputAddress');
+    if(addr && addr.value) window.checkPaidStatus(addr.value);
+}
+// --- 4. 視窗與 UI 操作 (含排序與管理) ---
 
 window.openManageCustomerModal = function() {
     window.renderManageCustomerList();
     document.getElementById('manageCustomerModal').classList.remove('hidden');
-    
     const el = document.getElementById('manageCustomerList');
     if(window.sortableInstance) window.sortableInstance.destroy(); 
-    
     window.sortableInstance = new Sortable(el, {
-        handle: '.handle', 
-        filter: '.ignore-drag', 
-        preventOnFilter: false, 
-        animation: 150,
-        ghostClass: 'bg-blue-50', 
+        handle: '.handle', filter: '.ignore-drag', preventOnFilter: false, 
+        animation: 150, ghostClass: 'bg-blue-50', 
         onEnd: function (evt) { window.saveNewOrder(); },
     });
 };
@@ -151,10 +149,7 @@ window.renderManageCustomerList = function() {
         div.innerHTML = `
             <div class="flex items-center gap-3 overflow-hidden">
                 <div class="handle cursor-move p-2 touch-none"><i class="fa-solid fa-bars text-gray-400 text-lg"></i></div>
-                <div class="flex-1">
-                    <div class="font-bold text-gray-800 text-sm truncate flex items-center">${catIcon} ${c.address} ${dateTag}</div>
-                    <div class="text-xs text-gray-400">$${c.amount}</div>
-                </div>
+                <div class="flex-1"><div class="font-bold text-gray-800 text-sm truncate flex items-center">${catIcon} ${c.address} ${dateTag}</div><div class="text-xs text-gray-400">$${c.amount}</div></div>
             </div>
             <button onclick="deleteCustomerInManager('${c.id}')" class="ignore-drag text-gray-300 hover:text-red-500 p-2 z-10"><i class="fa-solid fa-trash-can pointer-events-none"></i></button>
         `;
@@ -229,7 +224,7 @@ window.openEditCustomerModal = function(id, addr, amt, floor, cat, serviceDate) 
     document.getElementById('addCustomerModal').classList.remove('hidden');
 };
 
-// --- Window Functions ---
+// --- Window Functions (UI Logic) ---
 window.setReportCategory = function(cat) {
     window.appState.reportCategory = cat;
     const btns = { 'all': 'rep-cat-all', 'stairs': 'rep-cat-stairs', 'tank': 'rep-cat-tank' };
@@ -259,10 +254,7 @@ window.toggleView = function(viewName) {
         active.querySelector('span').className = 'text-[10px] font-bold';
     }
     window.scrollTo(0,0);
-    if(viewName === 'report') window.renderYearlyReport();
-    if(viewName === 'settle') window.updateSummary();
-    if(viewName === 'settings') window.renderCustomerSettings();
-    if(viewName === 'entry') { window.renderRecords(); window.renderPendingList(); }
+    refreshCurrentView();
 };
 
 window.addRecord = async function() {
@@ -384,6 +376,7 @@ window.renderYearlyReport = function() {
         return true;
     });
 
+    // 依序排列地址
     const addresses = custs.map(c => c.address);
     records.forEach(r => { if(!addresses.includes(r.address)) addresses.push(r.address); });
 
@@ -410,7 +403,8 @@ window.renderYearlyReport = function() {
                     paidMonths.forEach(m => { 
                         if(m >= 1 && m <= 12) { 
                             let status = 'paid'; 
-                            if(r.status === 'no_payment' || r.status === 'no_receipt') { status = 'warning'; } 
+                            if(r.status === 'no_payment') status = 'no_payment'; 
+                            else if(r.status === 'no_receipt') status = 'no_receipt';
                             monthInfo[m] = { 
                                 status: status, date: collectDate, id: r.id, 
                                 amount: r.amount, fullDate: r.date, 
@@ -441,10 +435,10 @@ window.renderYearlyReport = function() {
                 if(info.type === 'transfer') { typeText = '🏦 匯款'; typeBg = 'bg-blue-50 text-blue-700'; }
                 if(info.type === 'linepay') { typeText = '🟢 LP'; typeBg = 'bg-lime-50 text-lime-700'; }
                 if(info.type === 'dad') { typeText = '👴 匯爸'; typeBg = 'bg-purple-50 text-purple-700'; }
+                
                 let borderClass = 'border-emerald-200 bg-white';
                 if(info.status === 'no_receipt') borderClass = 'border-red-300 bg-red-50'; 
                 if(info.status === 'no_payment') borderClass = 'border-orange-300 bg-orange-50'; 
-                
                 let noteIcon = info.note ? `<i class="fa-solid fa-note-sticky text-yellow-500 text-[10px] ml-1"></i>` : '';
 
                 boxClass = `border ${borderClass} rounded p-2 flex flex-col justify-between min-h-[70px] relative shadow-sm cursor-pointer active:scale-95`;
@@ -456,8 +450,6 @@ window.renderYearlyReport = function() {
         container.appendChild(card); 
     }); 
 };
-
-// --- Modal Functions ---
 
 window.openReportAction = function(mode, address, year, month, recordId, date, amount, type, floor, note, status) { 
     const title = document.getElementById('reportActionTitle'); 
@@ -592,120 +584,38 @@ window.deleteReportRecord = async function(docId) { if(!currentUser) return; if(
 window.renderPendingList = function() { const list = document.getElementById('pendingList'); const container = document.getElementById('pendingContainer'); const current = window.appState.currentCollector; const items = window.appState.pending.filter(i => (i.collector === current) || (!i.collector && current === '子晴') ); if (items.length === 0) { container.classList.add('hidden'); return; } container.classList.remove('hidden'); document.getElementById('pendingCount').innerText = items.length; list.innerHTML = ''; items.forEach(item => { const floorId = `p-floor-${item.id}`; const monthsId = `p-months-${item.id}`; const noteId = `p-note-${item.id}`; const typeId = `p-type-${item.id}`; const catIcon = item.category === 'tank' ? '<span class="text-cyan-600">💧</span>' : '<span class="text-orange-600">🪜</span>'; let sTag = ''; if(item.serviceDate) { sTag = `<span class="text-xs bg-cyan-100 text-cyan-700 px-1 rounded ml-1 font-bold">洗:${item.serviceDate.slice(5)}</span>`; } const div = document.createElement('div'); div.className = 'bg-white p-3 rounded-xl border border-gray-200 shadow-sm relative'; div.innerHTML = ` <div class="flex justify-between items-start mb-2"> <div class="flex items-center gap-2"> <div class="text-xl">${catIcon}</div> <div> <div class="font-bold text-lg text-gray-800 flex items-center">${item.address} ${sTag}</div> </div> </div> <div class="font-bold text-emerald-600 text-lg">$${item.amount}</div> </div> <div class="space-y-2"> <div class="flex gap-2"> <input id="${monthsId}" value="${item.months || ''}" readonly onclick="openPendingMonthPicker('${item.id}', '${item.months||''}')" placeholder="選擇月份" class="bg-blue-50 border border-blue-200 rounded p-2 text-sm w-1/2 text-center text-blue-700 font-bold cursor-pointer"> <input id="${floorId}" value="${item.floor || ''}" placeholder="樓層/戶號" class="bg-gray-50 border rounded p-2 text-sm w-1/2 text-center font-medium"> </div> <div class="flex gap-2 items-center"> <select id="${typeId}" class="bg-gray-50 border rounded p-2 text-sm w-20"> <option value="cash" ${item.type === 'cash' ? 'selected' : ''}>現金</option> <option value="transfer" ${item.type === 'transfer' ? 'selected' : ''}>匯款</option> <option value="linepay" ${item.type === 'linepay' ? 'selected' : ''}>LinePay</option> <option value="dad" ${item.type === 'dad' ? 'selected' : ''}>匯給爸爸</option> </select> <input id="${noteId}" value="${item.note || ''}" placeholder="備註..." class="bg-gray-50 border rounded p-2 text-sm flex-1"> <button onclick="openConfirmCollectionModal('${item.id}', ${item.amount}, '${item.address}', '${item.category || 'stairs'}', '${item.serviceDate || ''}')" class="bg-green-500 text-white w-10 h-10 rounded-full shadow flex items-center justify-center active:scale-90 transition-transform flex-shrink-0"> <i class="fa-solid fa-check"></i> </button> </div> </div> <button onclick="deletePending('${item.id}')" class="absolute top-2 right-2 text-gray-300 hover:text-red-400 p-1"><i class="fa-solid fa-times"></i></button> `; list.appendChild(div); }); };
 window.renderRecords = function() { const list = document.getElementById('recordList'); const records = window.appState.records.filter(r => { const rCol = r.collector || '子晴'; return rCol === window.appState.currentCollector; }); list.innerHTML = ''; document.getElementById('recordCount').innerText = records.length; if (records.length === 0) { list.innerHTML = `<div class="text-center text-gray-400 py-12 opacity-60"><i class="fa-solid fa-clipboard-list text-4xl mb-3"></i><p>尚無 ${window.appState.currentCollector} 的紀錄</p></div>`; return; } records.forEach(record => { let tagClass = 'tag-cash'; let tagText = '現金'; if(record.type === 'transfer') { tagClass = 'tag-transfer'; tagText = '匯款'; } else if(record.type === 'linepay') { tagClass = 'tag-linepay'; tagText = 'LinePay'; } else if(record.type === 'dad') { tagClass = 'tag-dad'; tagText = '已匯給爸爸'; } let noteHtml = record.note ? `<div class="text-sm mt-2 p-2 rounded-lg border border-gray-100 bg-gray-50 text-gray-600 flex items-center gap-2"><i class="fa-regular fa-comment-dots"></i> <span>${record.note}</span></div>` : ''; const dateObj = new Date(record.date); const displayDate = `${dateObj.getMonth()+1}/${dateObj.getDate()}`; let sTag = ''; if(record.category === 'tank') sTag = `<span class="text-xs font-bold px-2 py-0.5 rounded-full tag-tank flex items-center gap-1">💧 洗水塔</span>`; else sTag = `<span class="text-xs font-bold px-2 py-0.5 rounded-full tag-stairs flex items-center gap-1">🪜 洗樓梯</span>`; let serviceTag = ''; if(record.serviceDate) { const sDate = new Date(record.serviceDate); const sDateStr = `${sDate.getMonth()+1}/${sDate.getDate()}`; serviceTag = `<span class="text-xs font-bold px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-700 flex items-center gap-1 ml-1"><i class="fa-solid fa-soap"></i> 洗:${sDateStr}</span>`; } let statusHtml = ''; if(record.status === 'no_receipt') { statusHtml = `<div class="mt-2 bg-red-50 p-2 rounded-lg border border-red-200 flex justify-between items-center"><span class="text-xs font-bold text-red-600"><i class="fa-solid fa-triangle-exclamation"></i> 待給收據</span><button onclick="updateRecordStatus('${record.id}', 'completed')" class="px-3 py-1 bg-red-500 text-white text-xs rounded-full shadow active:scale-95">已補單</button></div>`; } else if(record.status === 'no_payment') { statusHtml = `<div class="mt-2 bg-orange-50 p-2 rounded-lg border border-orange-200 flex justify-between items-center"><span class="text-xs font-bold text-orange-600"><i class="fa-solid fa-hourglass-half"></i> 待確認匯款</span><button onclick="updateRecordStatus('${record.id}', 'completed')" class="px-3 py-1 bg-orange-500 text-white text-xs rounded-full shadow active:scale-95">款項已入</button></div>`; } const item = document.createElement('div'); item.className = 'card p-4 relative border-l-4 ' + (record.type === 'cash' ? 'border-gray-400' : 'border-gray-300'); item.innerHTML = ` <div class="flex justify-between items-start"> <div class="flex-1 mr-2"> <div class="flex items-center gap-2 mb-1 flex-wrap"> <span class="text-xs font-bold text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">${displayDate}</span> ${sTag} ${serviceTag} <span class="text-xs font-bold px-2 py-0.5 rounded-full ${tagClass} flex items-center gap-1">${tagText}</span> </div> <div class="text-xl font-bold text-gray-800 leading-tight mb-1">${record.address} <span class="text-base font-normal text-gray-500 ml-1">${record.floor || ''}</span></div> <div class="text-sm text-blue-600 font-bold bg-blue-50 inline-block px-2 py-0.5 rounded border border-blue-100"><i class="fa-regular fa-calendar-check mr-1"></i> ${record.months || '未填月份'}</div> </div> <div class="text-right"><div class="text-2xl font-bold font-mono text-gray-800">$${record.amount.toLocaleString()}</div></div> </div> ${statusHtml} ${noteHtml} <button onclick="deleteRecord('${record.id}')" class="absolute top-2 right-2 text-gray-200 hover:text-red-400 p-2"><i class="fa-solid fa-trash-can"></i></button> `; list.appendChild(item); }); };
 
+// --- 9. Helper Functions (復原所有互動) ---
+window.setCollector = function(name) { window.appState.currentCollector = name; const tabs = { '子晴': 'tab-zih-cing', '子涵': 'tab-zih-han', '宗敬': 'tab-zong-jing' }; const activeClasses = { '子晴': 'active-zih-cing', '子涵': 'active-zih-han', '宗敬': 'active-zong-jing' }; const themeColors = { '子晴': 'bg-[#c2a992]', '子涵': 'bg-[#ff99ac]', '宗敬': 'bg-sky-400' }; const btnColors = { '子晴': 'bg-[#c2a992] text-white', '子涵': 'bg-[#ff99ac] text-white', '宗敬': 'bg-sky-400 text-white' }; const qsColors = { '子晴': 'bg-[#a38e7a]', '子涵': 'bg-pink-400', '宗敬': 'bg-sky-500' }; const cardColors = { '子晴': 'border-[#e6dbd0]', '子涵': 'border-[#ffc1cc]', '宗敬': 'border-sky-300' }; const icons = { '子晴': '🎠', '子涵': '🌸', '宗敬': '☁️' }; Object.values(tabs).forEach(id => { const el = document.getElementById(id); el.classList.remove('active-zih-cing', 'active-zih-han', 'active-zong-jing', 'bg-white', 'text-gray-800'); el.classList.add('text-gray-400'); }); document.getElementById(tabs[name]).classList.add(activeClasses[name]); document.getElementById(tabs[name]).classList.remove('text-gray-400'); document.getElementById('mainHeader').className = `${themeColors[name]} text-white pt-safe sticky top-0 z-20 shadow-lg transition-colors duration-300`; document.getElementById('addBtn').className = `w-full btn-primary py-4 rounded-xl text-lg font-bold shadow-lg shadow-gray-300 flex justify-center items-center gap-2 transition-all active:scale-95 ${btnColors[name]}`; document.getElementById('quickSelectBtn').className = `${qsColors[name]} text-white text-sm px-4 py-2 rounded-lg shadow active:scale-95 flex items-center transition-all`; const card = document.getElementById('entryCard'); card.className = `card p-5 border-t-4 transition-colors duration-300 ${cardColors[name]}`; document.getElementById('listTitleName').innerText = name; document.getElementById('listTitleIcon').innerText = icons[name]; document.getElementById('settlePageTitle').innerText = `${name} 的薪水結算`; 
+// 重要：切換人員後要刷新所有視圖
+refreshCurrentView();
+};
+
+window.setServiceCategory = function(cat) { window.appState.currentServiceCategory = cat; const input = document.getElementById('inputServiceType'); if(input) input.value = cat; const btnStairs = document.getElementById('btn-cat-stairs'); const btnTank = document.getElementById('btn-cat-tank'); if (btnStairs && btnTank) { btnStairs.className = 'service-btn p-3 rounded-xl bg-orange-50 text-orange-400 font-bold flex justify-center items-center gap-2 shadow-sm'; btnTank.className = 'service-btn p-3 rounded-xl bg-cyan-50 text-cyan-400 font-bold flex justify-center items-center gap-2 shadow-sm'; if(cat === 'stairs') { btnStairs.classList.add('active', 'text-orange-700', 'border-orange-200'); btnStairs.classList.remove('text-orange-400'); } else { btnTank.classList.add('active', 'text-cyan-700', 'border-cyan-200'); btnTank.classList.remove('text-cyan-400'); } } };
+window.setEditCustCategory = function(cat) { document.getElementById('editCustCategory').value = cat; const s = document.getElementById('edit-cat-stairs'); const t = document.getElementById('edit-cat-tank'); s.className = 'p-2 rounded border text-sm font-bold bg-gray-50 text-gray-400 border-gray-200'; t.className = 'p-2 rounded border text-sm font-bold bg-gray-50 text-gray-400 border-gray-200'; if(cat === 'stairs') s.className = 'p-2 rounded border text-sm font-bold bg-orange-100 text-orange-800 border-orange-200'; else t.className = 'p-2 rounded border text-sm font-bold bg-cyan-100 text-cyan-800 border-cyan-200'; };
+window.openPendingMonthPicker = function(itemId, currentStr) { window.appState.pendingMonthTargetId = itemId; window.appState.modalPickerYear = 114; window.appState.tempModalSet = new Set(); const regex = /(\d+)年\s*([0-9,]+)/g; let match; while ((match = regex.exec(currentStr)) !== null) { const y = parseInt(match[1]); const ms = match[2].split(',').map(Number); ms.forEach(m => window.appState.tempModalSet.add(`${y}-${m}`)); } renderModalMonthGrid(); document.getElementById('monthPickerModal').classList.remove('hidden'); };
+window.changeModalYear = function(delta) { window.appState.modalPickerYear += delta; renderModalMonthGrid(); };
+function renderModalMonthGrid() { const y = window.appState.modalPickerYear; document.getElementById('modalYearDisplay').innerText = `${y}年`; document.getElementById('modalYearDisplaySpan').innerText = `${y}年`; const grid = document.getElementById('modalMonthGrid'); grid.innerHTML = ''; for(let i=1; i<=12; i++) { const key = `${y}-${i}`; const btn = document.createElement('button'); const isSelected = window.appState.tempModalSet.has(key); btn.className = `month-btn ${isSelected ? 'selected' : ''} p-2 rounded text-center`; btn.innerText = `${i}月`; btn.onclick = function() { if(window.appState.tempModalSet.has(key)) { window.appState.tempModalSet.delete(key); this.classList.remove('selected'); } else { window.appState.tempModalSet.add(key); this.classList.add('selected'); } }; grid.appendChild(btn); } }
+window.closeMonthPickerModal = function(e) { if(e && e.target !== e.currentTarget) return; document.getElementById('monthPickerModal').classList.add('hidden'); };
+window.applyModalMonths = function() { const groups = {}; window.appState.tempModalSet.forEach(key => { const [y, m] = key.split('-').map(Number); if(!groups[y]) groups[y] = []; groups[y].push(m); }); const parts = []; Object.keys(groups).sort().forEach(y => { const months = groups[y].sort((a,b)=>a-b).join(','); parts.push(`${y}年 ${months}月`); }); const targetId = window.appState.pendingMonthTargetId; if(targetId) { document.getElementById(`p-months-${targetId}`).value = parts.join(', '); updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'pending', targetId), { months: parts.join(', ') }); } closeMonthPickerModal(null); };
+window.openHistory = function(address) { const list = document.getElementById('historyList'); const title = document.getElementById('historyTitle'); title.innerText = address; list.innerHTML = ''; const history = window.appState.records.filter(r => r.address === address); if(history.length === 0) { list.innerHTML = '<div class="text-center text-gray-400 py-10">尚無此地址的紀錄</div>'; } else { history.forEach(h => { const d = new Date(h.date); const dateStr = `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()}`; let typeText = '現金'; if(h.type === 'transfer') typeText = '匯款'; if(h.type === 'linepay') typeText = 'LinePay'; if(h.type === 'dad') typeText = '匯給爸爸'; const row = document.createElement('div'); row.className = 'p-3 border-b border-gray-100 flex justify-between items-center'; row.innerHTML = ` <div> <div class="text-sm font-bold text-gray-800">${dateStr} <span class="text-xs text-gray-500">(${h.collector})</span></div> <div class="text-xs text-blue-500">${h.months || '未填月份'}</div> </div> <div class="text-right"> <div class="font-bold text-emerald-600">$${h.amount}</div> <div class="text-xs text-gray-400">${typeText}</div> </div> `; list.appendChild(row); }); } document.getElementById('historyModal').classList.remove('hidden'); };
+window.closeHistory = function(e) { if(e && e.target !== e.currentTarget) return; document.getElementById('historyModal').classList.add('hidden'); };
+window.renderCustomerSettings = function() { const list = document.getElementById('customerListSettings'); const current = window.appState.currentCollector; const customers = window.appState.customers.filter(c => (c.collector === current) || (!c.collector && current === '子晴') ); list.innerHTML = ''; if(customers.length === 0) { list.innerHTML = `<div class="text-center text-gray-400 text-xs py-2">尚未建立 ${current} 的常用客戶</div>`; return; } customers.forEach(c => { const div = document.createElement('div'); div.className = 'flex justify-between items-center p-3 bg-white rounded-lg border border-gray-100 mb-2 shadow-sm'; const catIcon = c.category === 'tank' ? '💧' : '🪜'; const dateTag = c.serviceDate ? `<span class="ml-1 text-[10px] bg-gray-100 text-gray-500 px-1 rounded">${c.serviceDate.slice(5)}</span>` : ''; div.innerHTML = ` <div class="text-sm"> <div class="font-bold text-gray-800"><span class="mr-1">${catIcon}</span> ${c.address} ${dateTag} <span class="text-gray-400 text-xs font-normal">${c.floor || '不固定'}</span></div> <div class="text-emerald-600 font-bold">$${c.amount}</div> </div> <div class="flex"> <button onclick="openHistory('${c.address}')" class="text-orange-400 hover:text-orange-600 px-2 py-2"><i class="fa-solid fa-clock-rotate-left"></i></button> <button onclick="openEditCustomerModal('${c.id}', '${c.address}', ${c.amount}, '${c.floor || ''}', '${c.category || 'stairs'}', '${c.serviceDate || ''}')" class="text-gray-400 hover:text-blue-500 px-2 py-2"><i class="fa-solid fa-pen"></i></button> <button onclick="deleteCustomer('${c.id}')" class="text-gray-300 hover:text-red-500 px-2 py-2"><i class="fa-solid fa-trash-can"></i></button> </div> `; list.appendChild(div); }); };
+window.renderCustomerSelect = function() { const list = document.getElementById('customerSelectList'); const search = document.getElementById('customerSearch').value.toLowerCase(); const current = window.appState.currentCollector; const customers = window.appState.customers.filter(c => (c.collector === current) || (!c.collector && current === '子晴') ); list.innerHTML = ''; const filtered = customers.filter(c => c.address.toLowerCase().includes(search)); document.getElementById('customerModalCollector').innerText = current; if(filtered.length === 0 && search.length > 0) { const btn = document.createElement('button'); btn.className = 'w-full p-4 bg-blue-50 text-blue-600 rounded-xl font-bold flex items-center justify-center border border-blue-200 active:bg-blue-100'; btn.onclick = () => selectCustomer(search, '', '', 'stairs'); btn.innerHTML = `<i class="fa-solid fa-plus mr-2"></i> 直接填寫：${search}`; list.appendChild(btn); return; } filtered.forEach(c => { const lastRec = window.appState.records.find(r => r.address === c.address); let lastInfo = '尚無紀錄'; if(lastRec) { const d = new Date(lastRec.date); lastInfo = `上次：${d.getMonth()+1}/${d.getDate()} (${lastRec.months || '?'}) - ${lastRec.collector}`; } const btn = document.createElement('button'); btn.className = 'list-btn w-full p-3 bg-gray-50 border border-gray-100 rounded-xl flex justify-between items-center text-left mb-2 active:bg-blue-50'; btn.onclick = () => selectCustomer(c.address, c.floor, c.amount, c.category); const catIcon = c.category === 'tank' ? '💧' : '🪜'; btn.innerHTML = ` <div> <div class="font-bold text-gray-800 text-lg"><span class="mr-1">${catIcon}</span>${c.address} <span class="text-sm font-normal text-gray-500">${c.floor || ''}</span></div> <div class="text-xs text-gray-400 mt-1">${lastInfo}</div> </div> <div class="font-bold text-emerald-600">$${c.amount}</div> `; list.appendChild(btn); }); };
+window.selectCustomer = function(addr, floor, amount, category) { document.getElementById('inputAddress').value = addr; document.getElementById('inputFloor').value = floor || ''; document.getElementById('inputAmount').value = amount || ''; if(category) window.setServiceCategory(category); window.checkPaidStatus(addr); closeCustomerSelect(null); showToast("已填入資料"); };
 // --- 11. 更新結算邏輯 (加入日期篩選) ---
-window.updateSummary = function() { 
-    let totalCashAll = 0, totalTransferAll = 0, totalLinePayAll = 0, totalDadAll = 0; 
-    let totalCashMe = 0, totalTransferMe = 0, totalLinePayMe = 0, totalDadMe = 0; 
-    let breakdown = { '子晴': { cash: 0, transfer: 0 }, '子涵': { cash: 0, transfer: 0 }, '宗敬': { cash: 0, transfer: 0 }, '其他': { cash: 0, transfer: 0 } }; 
-    let catStats = { 'stairs': 0, 'tank': 0 }; 
-    let pendingReceiptCount = 0; 
-    let pendingPaymentCount = 0; 
-    const current = window.appState.currentCollector; 
-
-    // 取得日期篩選值
-    const sDate = document.getElementById('settleStartDate').value;
-    const eDate = document.getElementById('settleEndDate').value;
-
-    window.appState.records.forEach(r => { 
-        // 日期篩選邏輯
-        if (sDate && r.date < sDate) return;
-        if (eDate && r.date > eDate) return;
-
-        let col = r.collector; 
-        if(!col || (col !== '子晴' && col !== '子涵' && col !== '宗敬')) { 
-            col = '其他'; 
-            if (r.collector === '我') col = '其他'; 
-        } 
-
-        if (col === current) { 
-            if (r.status === 'no_receipt') pendingReceiptCount++; 
-            if (r.status === 'no_payment') pendingPaymentCount++; 
-        } 
-
-        if (r.status === 'no_payment') return; 
-
-        const amt = parseInt(r.amount) || 0;
-
-        if (r.type === 'cash') { 
-            totalCashAll += amt; 
-            if (col === current) totalCashMe += amt; 
-            if (breakdown[col]) breakdown[col].cash += amt; 
-        } else if (r.type === 'transfer') { 
-            totalTransferAll += amt; 
-            if (col === current) totalTransferMe += amt; 
-            if (breakdown[col]) breakdown[col].transfer += amt; 
-        } else if (r.type === 'linepay') { 
-            totalLinePayAll += amt; 
-            if (col === current) totalLinePayMe += amt; 
-        } else if (r.type === 'dad') { 
-            totalDadAll += amt; 
-            if (col === current) totalDadMe += amt; 
-        } 
-
-        const cat = r.category === 'tank' ? 'tank' : 'stairs'; 
-        catStats[cat] += amt; 
-    }); 
-
-    const grandTotalMe = totalCashMe + totalTransferMe + totalLinePayMe + totalDadMe; 
-    const userHolding = totalCashMe + totalTransferMe + totalLinePayMe; 
-    const fmt = (n) => `$${n.toLocaleString()}`; 
-
-    document.getElementById('headerCashTotal').innerText = fmt(totalCashMe + totalLinePayMe); 
-    document.getElementById('headerTransferTotal').innerText = fmt(totalTransferMe); 
-    document.getElementById('headerGrandTotal').innerText = fmt(grandTotalMe); 
-    
-    document.getElementById('settleCash').innerText = fmt(totalCashMe); 
-    document.getElementById('settleTransfer').innerText = fmt(totalTransferMe); 
-    document.getElementById('settleLinePay').innerText = fmt(totalLinePayMe); 
-    document.getElementById('settleDad').innerText = fmt(totalDadMe); 
-    document.getElementById('settleTotal').innerText = fmt(grandTotalMe); 
-
-    const salary = parseInt(document.getElementById('mySalary').value) || 0; 
-    const finalToDad = userHolding - salary; 
-    document.getElementById('finalToDad').innerText = fmt(finalToDad); 
-
-    document.getElementById('categoryBreakdown').innerHTML = ` 
-        <div class="bg-white p-3 rounded-lg border border-orange-200 text-center"> <div class="text-xs text-orange-600 font-bold mb-1">🪜 洗樓梯 (全部)</div> <div class="text-xl font-bold text-gray-800">${fmt(catStats.stairs)}</div> </div> 
-        <div class="bg-white p-3 rounded-lg border border-cyan-200 text-center"> <div class="text-xs text-cyan-600 font-bold mb-1">💧 洗水塔 (全部)</div> <div class="text-xl font-bold text-gray-800">${fmt(catStats.tank)}</div> </div> 
-    `; 
-
-    const warningContainer = document.getElementById('settleWarnings'); 
-    warningContainer.innerHTML = ''; 
-    if (pendingReceiptCount > 0 || pendingPaymentCount > 0) { 
-        warningContainer.classList.remove('hidden'); 
-        if (pendingReceiptCount > 0) { warningContainer.innerHTML += `<div class="bg-red-100 text-red-800 p-3 rounded-lg text-sm font-bold flex items-center"><i class="fa-solid fa-triangle-exclamation mr-2"></i> 您有 ${pendingReceiptCount} 筆帳款還沒給收據！</div>`; } 
-        if (pendingPaymentCount > 0) { warningContainer.innerHTML += `<div class="bg-orange-100 text-orange-800 p-3 rounded-lg text-sm font-bold flex items-center"><i class="fa-solid fa-hourglass-half mr-2"></i> 您有 ${pendingPaymentCount} 筆匯款尚未確認入帳！</div>`; } 
-    } else { 
-        warningContainer.classList.add('hidden'); 
-    } 
-    
-    let breakdownHtml = '';
-    ['子晴', '子涵', '宗敬'].forEach(p => {
-        if(p !== current) {
-            breakdownHtml += `<div class="flex justify-between text-xs text-gray-500 border-b border-gray-100 py-1"><span>${p}</span><span>現:${fmt(breakdown[p].cash)} / 匯:${fmt(breakdown[p].transfer)}</span></div>`;
-        }
-    });
-    document.getElementById('collectorBreakdown').innerHTML = breakdownHtml;
-};
-
-// 清除日期按鈕功能
-window.clearSettleDates = function() {
-    document.getElementById('settleStartDate').value = '';
-    document.getElementById('settleEndDate').value = '';
-    window.updateSummary();
-};
-
+window.updateSummary = function() { let totalCashAll = 0, totalTransferAll = 0, totalLinePayAll = 0, totalDadAll = 0; let totalCashMe = 0, totalTransferMe = 0, totalLinePayMe = 0, totalDadMe = 0; let breakdown = { '子晴': { cash: 0, transfer: 0 }, '子涵': { cash: 0, transfer: 0 }, '宗敬': { cash: 0, transfer: 0 }, '其他': { cash: 0, transfer: 0 } }; let catStats = { 'stairs': 0, 'tank': 0 }; let pendingReceiptCount = 0; let pendingPaymentCount = 0; const current = window.appState.currentCollector; const sDate = document.getElementById('settleStartDate').value; const eDate = document.getElementById('settleEndDate').value; window.appState.records.forEach(r => { if (sDate && r.date < sDate) return; if (eDate && r.date > eDate) return; let col = r.collector; if(!col || (col !== '子晴' && col !== '子涵' && col !== '宗敬')) { col = '其他'; if (r.collector === '我') col = '其他'; } if (col === current) { if (r.status === 'no_receipt') pendingReceiptCount++; if (r.status === 'no_payment') pendingPaymentCount++; } if (r.status === 'no_payment') return; const amt = parseInt(r.amount) || 0; if (r.type === 'cash') { totalCashAll += amt; if (col === current) totalCashMe += amt; if (breakdown[col]) breakdown[col].cash += amt; } else if (r.type === 'transfer') { totalTransferAll += amt; if (col === current) totalTransferMe += amt; if (breakdown[col]) breakdown[col].transfer += amt; } else if (r.type === 'linepay') { totalLinePayAll += amt; if (col === current) totalLinePayMe += amt; } else if (r.type === 'dad') { totalDadAll += amt; if (col === current) totalDadMe += amt; } const cat = r.category === 'tank' ? 'tank' : 'stairs'; catStats[cat] += amt; }); const grandTotalMe = totalCashMe + totalTransferMe + totalLinePayMe + totalDadMe; const userHolding = totalCashMe + totalTransferMe + totalLinePayMe; const fmt = (n) => `$${n.toLocaleString()}`; document.getElementById('headerCashTotal').innerText = fmt(totalCashMe + totalLinePayMe); document.getElementById('headerTransferTotal').innerText = fmt(totalTransferMe); document.getElementById('headerGrandTotal').innerText = fmt(grandTotalMe); document.getElementById('settleCash').innerText = fmt(totalCashMe); document.getElementById('settleTransfer').innerText = fmt(totalTransferMe); document.getElementById('settleLinePay').innerText = fmt(totalLinePayMe); document.getElementById('settleDad').innerText = fmt(totalDadMe); document.getElementById('settleTotal').innerText = fmt(grandTotalMe); const salary = parseInt(document.getElementById('mySalary').value) || 0; const finalToDad = userHolding - salary; document.getElementById('finalToDad').innerText = fmt(finalToDad); document.getElementById('categoryBreakdown').innerHTML = ` <div class="bg-white p-3 rounded-lg border border-orange-200 text-center"> <div class="text-xs text-orange-600 font-bold mb-1">🪜 洗樓梯 (全部)</div> <div class="text-xl font-bold text-gray-800">${fmt(catStats.stairs)}</div> </div> <div class="bg-white p-3 rounded-lg border border-cyan-200 text-center"> <div class="text-xs text-cyan-600 font-bold mb-1">💧 洗水塔 (全部)</div> <div class="text-xl font-bold text-gray-800">${fmt(catStats.tank)}</div> </div> `; const warningContainer = document.getElementById('settleWarnings'); warningContainer.innerHTML = ''; if (pendingReceiptCount > 0 || pendingPaymentCount > 0) { warningContainer.classList.remove('hidden'); if (pendingReceiptCount > 0) { warningContainer.innerHTML += `<div class="bg-red-100 text-red-800 p-3 rounded-lg text-sm font-bold flex items-center"><i class="fa-solid fa-triangle-exclamation mr-2"></i> 您有 ${pendingReceiptCount} 筆帳款還沒給收據！</div>`; } if (pendingPaymentCount > 0) { warningContainer.innerHTML += `<div class="bg-orange-100 text-orange-800 p-3 rounded-lg text-sm font-bold flex items-center"><i class="fa-solid fa-hourglass-half mr-2"></i> 您有 ${pendingPaymentCount} 筆匯款尚未確認入帳！</div>`; } } else { warningContainer.classList.add('hidden'); } let breakdownHtml = ''; ['子晴', '子涵', '宗敬'].forEach(p => { if(p !== current) { breakdownHtml += `<div class="flex justify-between text-xs text-gray-500 border-b border-gray-100 py-1"><span>${p}</span><span>現:${fmt(breakdown[p].cash)} / 匯:${fmt(breakdown[p].transfer)}</span></div>`; } }); document.getElementById('collectorBreakdown').innerHTML = breakdownHtml; };
+window.clearSettleDates = function() { document.getElementById('settleStartDate').value = ''; document.getElementById('settleEndDate').value = ''; window.updateSummary(); };
 window.calculateSettlement = function() { window.updateSummary(); };
 window.addTag = function(text) { const el = document.getElementById('inputNote'); el.value = el.value ? el.value + `，${text}` : text; };
 window.showToast = function(msg) { const t = document.getElementById('toast'); t.innerText = msg; t.style.display = 'block'; t.style.opacity = '1'; t.style.transform = 'translate(-50%, 0)'; setTimeout(() => { t.style.display = 'none'; }, 2000); };
 window.exportData = function() { const data = window.appState; const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `雲端收費備份_${new Date().toISOString().slice(0,10)}.json`; a.click(); };
 window.printAllRecords = function() { const records = window.appState.records; if (records.length === 0) { window.showToast("目前沒有紀錄可列印"); return; } let totalCash = 0; let totalTransfer = 0; let totalLinePay = 0; let totalDad = 0; let totalAmount = 0; records.forEach(r => { if (r.status === 'no_payment') return; if(r.type === 'cash') totalCash += r.amount; else if(r.type === 'transfer') totalTransfer += r.amount; else if(r.type === 'linepay') totalLinePay += r.amount; else if(r.type === 'dad') totalDad += r.amount; totalAmount += r.amount; }); const dateStr = new Date().toLocaleDateString('zh-TW', {year: 'numeric', month: '2-digit', day: '2-digit'}); let html = ` <div class="print-title">清潔收費總報表</div> <div style="text-align:center; margin-bottom:10px;">列印日期：${dateStr}</div> <div class="print-summary"> <div> <div style="font-size:12px;">本期總收入</div> <div style="font-size:16px; font-weight:bold;">$${totalAmount.toLocaleString()}</div> </div> <div> <div style="font-size:12px;">現金總額</div> <div style="font-size:16px; font-weight:bold;">$${totalCash.toLocaleString()}</div> </div> <div> <div style="font-size:12px;">匯款總額</div> <div style="font-size:16px; font-weight:bold;">$${totalTransfer.toLocaleString()}</div> </div> <div> <div style="font-size:12px;">LinePay</div> <div style="font-size:16px; font-weight:bold;">$${totalLinePay.toLocaleString()}</div> </div> <div> <div style="font-size:12px;">已匯給爸爸</div> <div style="font-size:16px; font-weight:bold;">$${totalDad.toLocaleString()}</div> </div> </div> <table class="print-table"> <thead> <tr> <th width="12%">日期</th> <th width="10%">經手人</th> <th width="25%">地址/客戶</th> <th width="10%">項目</th> <th width="10%">金額</th> <th width="10%">方式</th> <th width="13%">月份</th> <th width="10%">備註</th> </tr> </thead> <tbody> `; records.forEach(r => { const d = new Date(r.date); const dStr = `${d.getMonth()+1}/${d.getDate()}`; const cat = r.category === 'tank' ? '水塔' : '樓梯'; let type = '現金'; if(r.type === 'transfer') type = '匯款'; if(r.type === 'linepay') type = 'LinePay'; if(r.type === 'dad') type = '已匯爸'; let note = r.note || ''; if(r.status === 'no_receipt') note += ' (欠收據)'; if(r.status === 'no_payment') note += ' (未入帳)'; const collector = r.collector || '子晴'; const floor = r.floor ? `(${r.floor})` : ''; html += ` <tr> <td>${dStr}</td> <td>${collector}</td> <td>${r.address} ${floor}</td> <td>${cat}</td> <td style="font-weight:bold;">$${r.amount.toLocaleString()}</td> <td>${type}</td> <td style="font-size:11px;">${r.months || ''}</td> <td style="font-size:11px;">${note}</td> </tr> `; }); html += ` </tbody> </table> `; document.getElementById('printContainer').innerHTML = html; window.print(); };
 window.openAddCustomerModal = function() { window.appState.editingCustomerId = null; document.getElementById('customerModalTitle').innerHTML = '<i class="fa-solid fa-user-plus text-green-600"></i> 新增常用客戶'; document.getElementById('newCustAddr').value = ''; document.getElementById('newCustAmt').value = ''; document.getElementById('newCustFloor').value = ''; document.getElementById('newCustServiceDate').value = ''; document.getElementById('addCustomerModal').classList.remove('hidden'); window.setEditCustCategory('stairs'); setTimeout(() => document.getElementById('newCustAddr').focus(), 100); };
+window.openEditCustomerModal = function(id, addr, amt, floor, cat) { window.appState.editingCustomerId = id; document.getElementById('customerModalTitle').innerHTML = '<i class="fa-solid fa-pen-to-square text-blue-600"></i> 編輯常用客戶'; document.getElementById('newCustAddr').value = addr; document.getElementById('newCustAmt').value = amt; document.getElementById('newCustFloor').value = floor; window.setEditCustCategory(cat || 'stairs'); document.getElementById('addCustomerModal').classList.remove('hidden'); };
 window.closeAddCustomerModal = function(e) { if(e && e.target !== e.currentTarget) return; document.getElementById('addCustomerModal').classList.add('hidden'); };
 window.openCustomerSelect = function() { window.renderCustomerSelect(); document.getElementById('customerModal').classList.remove('hidden'); };
 window.closeCustomerSelect = function(e) { if(e && e.target !== e.currentTarget) return; document.getElementById('customerModal').classList.add('hidden'); };
 
-// --- 10. 程式啟動 ---
 window.onload = function() {
     const today = new Date();
     const dateStr = today.toISOString().split('T')[0];
@@ -720,8 +630,6 @@ window.onload = function() {
     window.setCollector('子晴');
     window.renderMonthPicker();
     
-    // 初始化時，設置結算日期為本月第一天到今天
-    // (可選：如果你希望預設看到所有，可以把下面這兩行註解掉)
     const y = today.getFullYear();
     const m = String(today.getMonth() + 1).padStart(2, '0');
     const d = String(today.getDate()).padStart(2, '0');
