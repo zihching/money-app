@@ -78,7 +78,7 @@ function setupListeners() {
             return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
         });
         window.appState.records = recs;
-        refreshCurrentView(); // 統一刷新畫面
+        refreshCurrentView();
     });
 
     const qCust = query(customersRef, orderBy('createdAt', 'desc'));
@@ -92,12 +92,13 @@ function setupListeners() {
     const qPending = query(pendingRef, orderBy('createdAt', 'desc'));
     onSnapshot(qPending, (snapshot) => {
         window.appState.pending = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        // 收到資料後，立即更新待收清單 (這裡會觸發過濾邏輯)
         window.renderPendingList();
     });
 }
 
 function refreshCurrentView() {
-    if(window.appState.currentView === 'entry') { window.renderRecords(); }
+    if(window.appState.currentView === 'entry') { window.renderRecords(); window.renderPendingList(); }
     if(window.appState.currentView === 'settle') { window.updateSummary(); }
     if(window.appState.currentView === 'report') { window.renderYearlyReport(); }
     if(window.appState.currentView === 'settings') { window.renderCustomerSettings(); }
@@ -433,6 +434,7 @@ window.renderYearlyReport = function() {
                 if(info.type === 'transfer') { typeText = '🏦 匯款'; typeBg = 'bg-blue-50 text-blue-700'; }
                 if(info.type === 'linepay') { typeText = '🟢 LP'; typeBg = 'bg-lime-50 text-lime-700'; }
                 if(info.type === 'dad') { typeText = '👴 匯爸'; typeBg = 'bg-purple-50 text-purple-700'; }
+                
                 let borderClass = 'border-emerald-200 bg-white';
                 if(info.status === 'no_receipt') borderClass = 'border-red-300 bg-red-50'; 
                 if(info.status === 'no_payment') borderClass = 'border-orange-300 bg-orange-50'; 
@@ -447,8 +449,6 @@ window.renderYearlyReport = function() {
         container.appendChild(card); 
     }); 
 };
-
-// --- Modal Functions ---
 
 window.openReportAction = function(mode, address, year, month, recordId, date, amount, type, floor, note, status) { 
     const title = document.getElementById('reportActionTitle'); 
@@ -580,10 +580,92 @@ window.updateReportRecord = async function(docId, date, amount, type, floor, not
 window.deleteReportRecord = async function(docId) { if(!currentUser) return; if(confirm("確定刪除？這月份將變回未收狀態")) { await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'records', docId)); window.closeReportActionModal(null); window.showToast("🗑️ 已刪除"); } };
 
 // --- 8. UI RENDERING (Lists) ---
-window.renderPendingList = function() { const list = document.getElementById('pendingList'); const container = document.getElementById('pendingContainer'); const current = window.appState.currentCollector; const items = window.appState.pending.filter(i => (i.collector === current) || (!i.collector && current === '子晴') ); if (items.length === 0) { container.classList.add('hidden'); return; } container.classList.remove('hidden'); document.getElementById('pendingCount').innerText = items.length; list.innerHTML = ''; items.forEach(item => { const floorId = `p-floor-${item.id}`; const monthsId = `p-months-${item.id}`; const noteId = `p-note-${item.id}`; const typeId = `p-type-${item.id}`; const catIcon = item.category === 'tank' ? '<span class="text-cyan-600">💧</span>' : '<span class="text-orange-600">🪜</span>'; let sTag = ''; if(item.serviceDate) { sTag = `<span class="text-xs bg-cyan-100 text-cyan-700 px-1 rounded ml-1 font-bold">洗:${item.serviceDate.slice(5)}</span>`; } const div = document.createElement('div'); div.className = 'bg-white p-3 rounded-xl border border-gray-200 shadow-sm relative'; div.innerHTML = ` <div class="flex justify-between items-start mb-2"> <div class="flex items-center gap-2"> <div class="text-xl">${catIcon}</div> <div> <div class="font-bold text-lg text-gray-800 flex items-center">${item.address} ${sTag}</div> </div> </div> <div class="font-bold text-emerald-600 text-lg">$${item.amount}</div> </div> <div class="space-y-2"> <div class="flex gap-2"> <input id="${monthsId}" value="${item.months || ''}" readonly onclick="openPendingMonthPicker('${item.id}', '${item.months||''}')" placeholder="選擇月份" class="bg-blue-50 border border-blue-200 rounded p-2 text-sm w-1/2 text-center text-blue-700 font-bold cursor-pointer"> <input id="${floorId}" value="${item.floor || ''}" placeholder="樓層/戶號" class="bg-gray-50 border rounded p-2 text-sm w-1/2 text-center font-medium"> </div> <div class="flex gap-2 items-center"> <select id="${typeId}" class="bg-gray-50 border rounded p-2 text-sm w-20"> <option value="cash" ${item.type === 'cash' ? 'selected' : ''}>現金</option> <option value="transfer" ${item.type === 'transfer' ? 'selected' : ''}>匯款</option> <option value="linepay" ${item.type === 'linepay' ? 'selected' : ''}>LinePay</option> <option value="dad" ${item.type === 'dad' ? 'selected' : ''}>匯給爸爸</option> </select> <input id="${noteId}" value="${item.note || ''}" placeholder="備註..." class="bg-gray-50 border rounded p-2 text-sm flex-1"> <button onclick="openConfirmCollectionModal('${item.id}', ${item.amount}, '${item.address}', '${item.category || 'stairs'}', '${item.serviceDate || ''}')" class="bg-green-500 text-white w-10 h-10 rounded-full shadow flex items-center justify-center active:scale-90 transition-transform flex-shrink-0"> <i class="fa-solid fa-check"></i> </button> </div> </div> <button onclick="deletePending('${item.id}')" class="absolute top-2 right-2 text-gray-300 hover:text-red-400 p-1"><i class="fa-solid fa-times"></i></button> `; list.appendChild(div); }); };
+window.renderPendingList = function() { 
+    const list = document.getElementById('pendingList'); 
+    const container = document.getElementById('pendingContainer'); 
+    const current = window.appState.currentCollector; 
+    // 修改點：加入 filter，只顯示當前收費員的清單
+    const items = window.appState.pending.filter(i => (i.collector === current) || (!i.collector && current === '子晴') ); 
+    
+    if (items.length === 0) { container.classList.add('hidden'); return; } 
+    container.classList.remove('hidden'); 
+    document.getElementById('pendingCount').innerText = items.length; 
+    list.innerHTML = ''; 
+    items.forEach(item => { 
+        const floorId = `p-floor-${item.id}`; 
+        const monthsId = `p-months-${item.id}`; 
+        const noteId = `p-note-${item.id}`; 
+        const typeId = `p-type-${item.id}`; 
+        const catIcon = item.category === 'tank' ? '<span class="text-cyan-600">💧</span>' : '<span class="text-orange-600">🪜</span>'; 
+        let sTag = ''; 
+        if(item.serviceDate) { sTag = `<span class="text-xs bg-cyan-100 text-cyan-700 px-1 rounded ml-1 font-bold">洗:${item.serviceDate.slice(5)}</span>`; } 
+        const div = document.createElement('div'); 
+        div.className = 'bg-white p-3 rounded-xl border border-gray-200 shadow-sm relative'; 
+        div.innerHTML = ` <div class="flex justify-between items-start mb-2"> <div class="flex items-center gap-2"> <div class="text-xl">${catIcon}</div> <div> <div class="font-bold text-lg text-gray-800 flex items-center">${item.address} ${sTag}</div> </div> </div> <div class="font-bold text-emerald-600 text-lg">$${item.amount}</div> </div> <div class="space-y-2"> <div class="flex gap-2"> <input id="${monthsId}" value="${item.months || ''}" readonly onclick="openPendingMonthPicker('${item.id}', '${item.months||''}')" placeholder="選擇月份" class="bg-blue-50 border border-blue-200 rounded p-2 text-sm w-1/2 text-center text-blue-700 font-bold cursor-pointer"> <input id="${floorId}" value="${item.floor || ''}" placeholder="樓層/戶號" class="bg-gray-50 border rounded p-2 text-sm w-1/2 text-center font-medium"> </div> <div class="flex gap-2 items-center"> <select id="${typeId}" class="bg-gray-50 border rounded p-2 text-sm w-20"> <option value="cash" ${item.type === 'cash' ? 'selected' : ''}>現金</option> <option value="transfer" ${item.type === 'transfer' ? 'selected' : ''}>匯款</option> <option value="linepay" ${item.type === 'linepay' ? 'selected' : ''}>LinePay</option> <option value="dad" ${item.type === 'dad' ? 'selected' : ''}>匯給爸爸</option> </select> <input id="${noteId}" value="${item.note || ''}" placeholder="備註..." class="bg-gray-50 border rounded p-2 text-sm flex-1"> <button onclick="openConfirmCollectionModal('${item.id}', ${item.amount}, '${item.address}', '${item.category || 'stairs'}', '${item.serviceDate || ''}')" class="bg-green-500 text-white w-10 h-10 rounded-full shadow flex items-center justify-center active:scale-90 transition-transform flex-shrink-0"> <i class="fa-solid fa-check"></i> </button> </div> </div> <button onclick="deletePending('${item.id}')" class="absolute top-2 right-2 text-gray-300 hover:text-red-400 p-1"><i class="fa-solid fa-times"></i></button> `; list.appendChild(div); 
+    }); 
+};
+
 window.renderRecords = function() { const list = document.getElementById('recordList'); const records = window.appState.records.filter(r => { const rCol = r.collector || '子晴'; return rCol === window.appState.currentCollector; }); list.innerHTML = ''; document.getElementById('recordCount').innerText = records.length; if (records.length === 0) { list.innerHTML = `<div class="text-center text-gray-400 py-12 opacity-60"><i class="fa-solid fa-clipboard-list text-4xl mb-3"></i><p>尚無 ${window.appState.currentCollector} 的紀錄</p></div>`; return; } records.forEach(record => { let tagClass = 'tag-cash'; let tagText = '現金'; if(record.type === 'transfer') { tagClass = 'tag-transfer'; tagText = '匯款'; } else if(record.type === 'linepay') { tagClass = 'tag-linepay'; tagText = 'LinePay'; } else if(record.type === 'dad') { tagClass = 'tag-dad'; tagText = '已匯給爸爸'; } let noteHtml = record.note ? `<div class="text-sm mt-2 p-2 rounded-lg border border-gray-100 bg-gray-50 text-gray-600 flex items-center gap-2"><i class="fa-regular fa-comment-dots"></i> <span>${record.note}</span></div>` : ''; const dateObj = new Date(record.date); const displayDate = `${dateObj.getMonth()+1}/${dateObj.getDate()}`; let sTag = ''; if(record.category === 'tank') sTag = `<span class="text-xs font-bold px-2 py-0.5 rounded-full tag-tank flex items-center gap-1">💧 洗水塔</span>`; else sTag = `<span class="text-xs font-bold px-2 py-0.5 rounded-full tag-stairs flex items-center gap-1">🪜 洗樓梯</span>`; let serviceTag = ''; if(record.serviceDate) { const sDate = new Date(record.serviceDate); const sDateStr = `${sDate.getMonth()+1}/${sDate.getDate()}`; serviceTag = `<span class="text-xs font-bold px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-700 flex items-center gap-1 ml-1"><i class="fa-solid fa-soap"></i> 洗:${sDateStr}</span>`; } let statusHtml = ''; if(record.status === 'no_receipt') { statusHtml = `<div class="mt-2 bg-red-50 p-2 rounded-lg border border-red-200 flex justify-between items-center"><span class="text-xs font-bold text-red-600"><i class="fa-solid fa-triangle-exclamation"></i> 待給收據</span><button onclick="updateRecordStatus('${record.id}', 'completed')" class="px-3 py-1 bg-red-500 text-white text-xs rounded-full shadow active:scale-95">已補單</button></div>`; } else if(record.status === 'no_payment') { statusHtml = `<div class="mt-2 bg-orange-50 p-2 rounded-lg border border-orange-200 flex justify-between items-center"><span class="text-xs font-bold text-orange-600"><i class="fa-solid fa-hourglass-half"></i> 待確認匯款</span><button onclick="updateRecordStatus('${record.id}', 'completed')" class="px-3 py-1 bg-orange-500 text-white text-xs rounded-full shadow active:scale-95">款項已入</button></div>`; } const item = document.createElement('div'); item.className = 'card p-4 relative border-l-4 ' + (record.type === 'cash' ? 'border-gray-400' : 'border-gray-300'); item.innerHTML = ` <div class="flex justify-between items-start"> <div class="flex-1 mr-2"> <div class="flex items-center gap-2 mb-1 flex-wrap"> <span class="text-xs font-bold text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">${displayDate}</span> ${sTag} ${serviceTag} <span class="text-xs font-bold px-2 py-0.5 rounded-full ${tagClass} flex items-center gap-1">${tagText}</span> </div> <div class="text-xl font-bold text-gray-800 leading-tight mb-1">${record.address} <span class="text-base font-normal text-gray-500 ml-1">${record.floor || ''}</span></div> <div class="text-sm text-blue-600 font-bold bg-blue-50 inline-block px-2 py-0.5 rounded border border-blue-100"><i class="fa-regular fa-calendar-check mr-1"></i> ${record.months || '未填月份'}</div> </div> <div class="text-right"><div class="text-2xl font-bold font-mono text-gray-800">$${record.amount.toLocaleString()}</div></div> </div> ${statusHtml} ${noteHtml} <button onclick="deleteRecord('${record.id}')" class="absolute top-2 right-2 text-gray-200 hover:text-red-400 p-2"><i class="fa-solid fa-trash-can"></i></button> `; list.appendChild(item); }); };
 
-// --- 9. Helper Functions (復原所有互動) ---
+// --- 9. Helper Functions ---
+window.openConfirmCollectionModal = function(id, amount, address, category, serviceDate) { const floor = document.getElementById(`p-floor-${id}`).value; const months = document.getElementById(`p-months-${id}`).value; const note = document.getElementById(`p-note-${id}`).value; const type = document.getElementById(`p-type-${id}`).value; window.appState.currentPendingAction = { id, amount, address, category, floor, months, note, type }; document.getElementById('confirmModalAddress').innerText = address; document.getElementById('confirmModalMonths').value = months; document.getElementById('confirmModalAmount').innerText = `$${amount}`; document.getElementById('confirmModalNote').value = note || ''; const today = new Date().toISOString().split('T')[0]; document.getElementById('confirmModalDate').value = today; document.getElementById('confirmModalServiceDate').value = serviceDate || ''; document.getElementById('confirmModalType').value = type; window.setModalStatus('completed'); document.getElementById('confirmCollectionModal').classList.remove('hidden'); document.getElementById('confirmCollectionBtn').onclick = doConfirmCollection; };
+window.closeConfirmCollectionModal = function(e) { if(e && e.target !== e.currentTarget) return; document.getElementById('confirmCollectionModal').classList.add('hidden'); };
+window.doConfirmCollection = function() { const action = window.appState.currentPendingAction; if(!action) return; const date = document.getElementById('confirmModalDate').value; const serviceDate = document.getElementById('confirmModalServiceDate').value; const months = document.getElementById('confirmModalMonths').value; const type = document.getElementById('confirmModalType').value; const status = document.getElementById('modalInputStatus').value; const note = document.getElementById('confirmModalNote').value; if(!date) { alert("請選擇收款日期"); return; } window.completePending(action.id, { date: date, serviceDate: serviceDate, amount: action.amount, address: action.address, floor: action.floor, months: months, note: note, type: type, category: action.category, status: status }); closeConfirmCollectionModal(null); };
+
+// 修改點：修復 setStatus 邏輯
+window.setStatus = function(status) { 
+    const input = document.getElementById('inputStatus'); 
+    if (input.value === status) input.value = 'completed'; else input.value = status; 
+    const current = input.value; 
+    const btnReceipt = document.getElementById('btn-status-receipt'); 
+    const btnPayment = document.getElementById('btn-status-payment'); 
+    // 重置
+    const baseClass = 'status-btn flex-1 p-2 rounded-lg font-bold border flex justify-center items-center gap-1 transition-all';
+    btnReceipt.className = baseClass + ' bg-red-50 text-red-500 border-red-200';
+    btnPayment.className = baseClass + ' bg-orange-50 text-orange-500 border-orange-200';
+    btnReceipt.style.opacity = '1'; btnReceipt.style.filter = 'none';
+    btnPayment.style.opacity = '1'; btnPayment.style.filter = 'none';
+
+    if(current === 'no_receipt') { 
+        btnReceipt.className = baseClass + ' active active-red bg-red-100 border-red-400 text-red-700'; 
+        btnPayment.style.opacity = '0.6'; btnPayment.style.filter = 'grayscale(1)'; 
+    } else if(current === 'no_payment') { 
+        btnPayment.className = baseClass + ' active active-orange bg-orange-100 border-orange-400 text-orange-700'; 
+        btnReceipt.style.opacity = '0.6'; btnReceipt.style.filter = 'grayscale(1)'; 
+    } 
+};
+
+window.setModalStatus = function(status) { const input = document.getElementById('modalInputStatus'); if (input.value === status) input.value = 'completed'; else input.value = status; const current = input.value; const btnReceipt = document.getElementById('modal-status-receipt'); const btnPayment = document.getElementById('modal-status-payment'); const baseClass = 'status-btn flex-1 p-2 rounded-lg font-bold border flex justify-center items-center gap-1 transition-all'; btnReceipt.className = baseClass + ' bg-red-50 text-red-500 border-red-200'; btnPayment.className = baseClass + ' bg-orange-50 text-orange-500 border-orange-200'; if(current === 'no_receipt') { btnReceipt.className = baseClass + ' active active-red bg-red-100 border-red-400 text-red-700'; } else if(current === 'no_payment') { btnPayment.className = baseClass + ' active active-orange bg-orange-100 border-orange-400 text-orange-700'; } else { btnReceipt.style.opacity = '0.6'; btnReceipt.style.filter = 'grayscale(1)'; btnPayment.style.opacity = '0.6'; btnPayment.style.filter = 'grayscale(1)'; return; } btnReceipt.style.opacity = '1'; btnReceipt.style.filter = 'none'; btnPayment.style.opacity = '1'; btnPayment.style.filter = 'none'; if (current === 'no_receipt') { btnPayment.style.opacity = '0.6'; btnPayment.style.filter = 'grayscale(1)'; } else if (current === 'no_payment') { btnReceipt.style.opacity = '0.6'; btnReceipt.style.filter = 'grayscale(1)'; } };
+window.changeYear = function(delta) { window.appState.pickerYear += delta; window.renderMonthPicker(); const addr = document.getElementById('inputAddress').value; if(addr) window.checkPaidStatus(addr); };
+
+// 修改點：修復 renderMonthPicker
+window.renderMonthPicker = function() { 
+    document.getElementById('pickerYearDisplay').innerText = `${window.appState.pickerYear}年`; 
+    const container = document.getElementById('monthPickerGrid'); 
+    container.innerHTML = ''; 
+    for(let i=1; i<=12; i++) { 
+        const btn = document.createElement('button'); 
+        btn.type = 'button'; 
+        btn.id = `mbtn-${i}`; 
+        btn.className = 'month-btn'; 
+        btn.innerText = `${i}月`; 
+        btn.onclick = () => window.toggleMonth(i); 
+        container.appendChild(btn); 
+    } 
+    window.appState.selectedMonthsSet.forEach(key => { 
+        const [y, m] = key.split('-').map(Number); 
+        if(y === window.appState.pickerYear) { 
+            const btn = document.getElementById(`mbtn-${m}`); 
+            if(btn) btn.classList.add('selected'); 
+        } 
+    }); 
+};
+
+window.toggleMonth = function(m) { const btn = document.getElementById(`mbtn-${m}`); if(btn.classList.contains('paid')) return; const key = `${window.appState.pickerYear}-${m}`; if(window.appState.selectedMonthsSet.has(key)) { window.appState.selectedMonthsSet.delete(key); btn.classList.remove('selected'); } else { window.appState.selectedMonthsSet.add(key); btn.classList.add('selected'); } window.updateSelectedMonthsInput(); const count = window.appState.selectedMonthsSet.size; if(window.appState.currentBaseAmount > 0 && count > 0) { const total = window.appState.currentBaseAmount * count; document.getElementById('inputAmount').value = total; } };
+window.updateSelectedMonthsInput = function() { const groups = {}; window.appState.selectedMonthsSet.forEach(key => { const [y, m] = key.split('-').map(Number); if(!groups[y]) groups[y] = []; groups[y].push(m); }); const parts = []; Object.keys(groups).sort().forEach(y => { const months = groups[y].sort((a,b)=>a-b).join(','); parts.push(`${y}年 ${months}月`); }); document.getElementById('selectedMonths').value = parts.join(', '); document.getElementById('statusHint').innerText = parts.join(', ') || '請選擇...'; };
+window.resetMonthPicker = function() { window.appState.selectedMonthsSet.clear(); document.querySelectorAll('.month-btn').forEach(b => { b.classList.remove('selected', 'paid'); b.removeAttribute('data-date'); }); window.updateSelectedMonthsInput(); window.appState.currentBaseAmount = 0; };
+let checkTimeout; window.debounceCheckPaidStatus = function(address) { clearTimeout(checkTimeout); checkTimeout = setTimeout(() => { window.checkPaidStatus(address); }, 500); };
+window.checkPaidStatus = function(address) { document.querySelectorAll('.month-btn').forEach(b => { b.classList.remove('paid'); b.removeAttribute('data-date'); }); if(!address) return; const records = window.appState.records.filter(r => r.address === address); const paidMap = new Map(); const regex = /(\d+)年\s*([0-9,]+)/g; records.forEach(r => { if(r.months) { const d = new Date(r.date); const dateStr = `${d.getMonth()+1}/${d.getDate()}`; let match; const localRegex = new RegExp(regex); while ((match = localRegex.exec(r.months)) !== null) { const y = parseInt(match[1]); const ms = match[2].split(',').map(Number); ms.forEach(m => paidMap.set(`${y}-${m}`, dateStr)); } } }); const currentPickerYear = window.appState.pickerYear; for(let m=1; m<=12; m++) { const key = `${currentPickerYear}-${m}`; if(paidMap.has(key)) { const btn = document.getElementById(`mbtn-${m}`); if(btn) { btn.classList.add('paid'); btn.setAttribute('data-date', paidMap.get(key)); if(window.appState.selectedMonthsSet.has(key)) { window.appState.selectedMonthsSet.delete(key); btn.classList.remove('selected'); } } } } window.updateSelectedMonthsInput(); const cust = window.appState.customers.find(c => c.address === address); if(cust) { window.appState.currentBaseAmount = cust.amount; if(cust.floor) document.getElementById('inputFloor').value = cust.floor; if(cust.category) window.setServiceCategory(cust.category); } else { window.appState.currentBaseAmount = 0; } };
 window.setCollector = function(name) { window.appState.currentCollector = name; const tabs = { '子晴': 'tab-zih-cing', '子涵': 'tab-zih-han', '宗敬': 'tab-zong-jing' }; const activeClasses = { '子晴': 'active-zih-cing', '子涵': 'active-zih-han', '宗敬': 'active-zong-jing' }; const themeColors = { '子晴': 'bg-[#c2a992]', '子涵': 'bg-[#ff99ac]', '宗敬': 'bg-sky-400' }; const btnColors = { '子晴': 'bg-[#c2a992] text-white', '子涵': 'bg-[#ff99ac] text-white', '宗敬': 'bg-sky-400 text-white' }; const qsColors = { '子晴': 'bg-[#a38e7a]', '子涵': 'bg-pink-400', '宗敬': 'bg-sky-500' }; const cardColors = { '子晴': 'border-[#e6dbd0]', '子涵': 'border-[#ffc1cc]', '宗敬': 'border-sky-300' }; const icons = { '子晴': '🎠', '子涵': '🌸', '宗敬': '☁️' }; Object.values(tabs).forEach(id => { const el = document.getElementById(id); el.classList.remove('active-zih-cing', 'active-zih-han', 'active-zong-jing', 'bg-white', 'text-gray-800'); el.classList.add('text-gray-400'); }); document.getElementById(tabs[name]).classList.add(activeClasses[name]); document.getElementById(tabs[name]).classList.remove('text-gray-400'); document.getElementById('mainHeader').className = `${themeColors[name]} text-white pt-safe sticky top-0 z-20 shadow-lg transition-colors duration-300`; document.getElementById('addBtn').className = `w-full btn-primary py-4 rounded-xl text-lg font-bold shadow-lg shadow-gray-300 flex justify-center items-center gap-2 transition-all active:scale-95 ${btnColors[name]}`; document.getElementById('quickSelectBtn').className = `${qsColors[name]} text-white text-sm px-4 py-2 rounded-lg shadow active:scale-95 flex items-center transition-all`; const card = document.getElementById('entryCard'); card.className = `card p-5 border-t-4 transition-colors duration-300 ${cardColors[name]}`; document.getElementById('listTitleName').innerText = name; document.getElementById('listTitleIcon').innerText = icons[name]; document.getElementById('settlePageTitle').innerText = `${name} 的薪水結算`; 
 refreshCurrentView();
 };
