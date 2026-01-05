@@ -1,3 +1,322 @@
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import { 
+    getFirestore, collection, doc, addDoc, deleteDoc, updateDoc, writeBatch,
+    onSnapshot, query, orderBy, enableIndexedDbPersistence, serverTimestamp 
+} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+// --- 1. 初始化全域變數 ---
+window.appState = { 
+    records: [], customers: [], pending: [], 
+    currentCollector: '子晴', 
+    editingCustomerId: null, 
+    currentServiceCategory: 'stairs', 
+    currentPendingAction: null, 
+    selectedMonthsSet: new Set(), 
+    currentBaseAmount: 0,
+    pickerYear: 114, 
+    modalPickerYear: 114,
+    reportYear: 114, 
+    reportCategory: 'all', 
+    pendingMonthTargetId: null,
+    currentView: 'entry',
+    reportBatchMonths: new Set(),
+    tempModalSet: new Set()
+};
+
+// --- 2. Firebase 設定 ---
+const firebaseConfig = {
+    apiKey: "AIzaSyDFUGYOobmVxYFQMBYz1iQ4z1HIrdbTi8Q",
+    authDomain: "travel-55c4b.firebaseapp.com",
+    databaseURL: "https://travel-55c4b-default-rtdb.firebaseio.com",
+    projectId: "travel-55c4b",
+    storageBucket: "travel-55c4b.firebasestorage.app",
+    messagingSenderId: "925227625640",
+    appId: "1:925227625640:web:3dc6a2e45735ceb7f8a69d",
+    measurementId: "G-6W8NY3EBZF"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const APP_ID = 'cleaning-app-v1'; 
+let currentUser = null;
+
+enableIndexedDbPersistence(db).catch((err) => { console.log("Persistence disabled:", err.code); });
+
+// --- 3. 登入與監聽 ---
+const initAuth = async () => {
+    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+        try { await signInWithCustomToken(auth, __initial_auth_token); } 
+        catch (e) { await signInAnonymously(auth); }
+    } else { await signInAnonymously(auth); }
+};
+initAuth();
+
+onAuthStateChanged(auth, (user) => {
+    const loader = document.getElementById('loading-overlay');
+    if (user) {
+        currentUser = user;
+        const uidDisp = document.getElementById('userIdDisplay');
+        if(uidDisp) uidDisp.innerText = `...${user.uid.slice(-4)}`;
+        setupListeners();
+        if(loader) loader.style.display = 'none';
+    }
+});
+
+function setupListeners() {
+    const recordsRef = collection(db, 'artifacts', APP_ID, 'public', 'data', 'records');
+    const customersRef = collection(db, 'artifacts', APP_ID, 'public', 'data', 'customers');
+    const pendingRef = collection(db, 'artifacts', APP_ID, 'public', 'data', 'pending');
+
+    const qRec = query(recordsRef, orderBy('date', 'desc')); 
+    onSnapshot(qRec, (snapshot) => {
+        let recs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        recs.sort((a, b) => {
+            if (a.date > b.date) return -1;
+            if (a.date < b.date) return 1;
+            return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
+        });
+        window.appState.records = recs;
+        refreshCurrentView();
+    });
+
+    const qCust = query(customersRef, orderBy('createdAt', 'desc'));
+    onSnapshot(qCust, (snapshot) => {
+        let custs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        custs.sort((a, b) => (a.order || 0) - (b.order || 0));
+        window.appState.customers = custs;
+        
+        // 更新地址建議清單
+        if(window.updateAddressSuggestions) window.updateAddressSuggestions(custs);
+        
+        refreshCurrentView();
+    });
+
+    const qPending = query(pendingRef, orderBy('createdAt', 'desc'));
+    onSnapshot(qPending, (snapshot) => {
+        window.appState.pending = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        window.renderPendingList();
+    });
+}
+
+function refreshCurrentView() {
+    if(window.appState.currentView === 'entry') { window.renderRecords(); window.renderPendingList(); }
+    if(window.appState.currentView === 'settle') { window.updateSummary(); }
+    if(window.appState.currentView === 'report') { window.renderYearlyReport(); }
+    if(window.appState.currentView === 'settings') { window.renderCustomerSettings(); }
+    if(!document.getElementById('customerModal').classList.contains('hidden')) { window.renderCustomerSelect(); }
+    if(!document.getElementById('manageCustomerModal').classList.contains('hidden')) { window.renderManageCustomerList(); }
+    
+    const addr = document.getElementById('inputAddress');
+    if(addr && addr.value) window.checkPaidStatus(addr.value);
+}
+// --- 4. 視窗與 UI 操作 (含排序與管理) ---
+
+window.openManageCustomerModal = function() {
+    window.renderManageCustomerList();
+    document.getElementById('manageCustomerModal').classList.remove('hidden');
+    const el = document.getElementById('manageCustomerList');
+    if(window.sortableInstance) window.sortableInstance.destroy(); 
+    window.sortableInstance = new Sortable(el, {
+        handle: '.handle', filter: '.ignore-drag', preventOnFilter: false, 
+        animation: 150, ghostClass: 'bg-blue-50', 
+        onEnd: function (evt) { window.saveNewOrder(); },
+    });
+};
+
+window.closeManageCustomerModal = function(e) {
+    if(e && e.target !== e.currentTarget) return;
+    document.getElementById('manageCustomerModal').classList.add('hidden');
+};
+
+window.renderManageCustomerList = function() {
+    const list = document.getElementById('manageCustomerList');
+    if(!list) return;
+    const current = window.appState.currentCollector;
+    const catFilter = window.appState.reportCategory || 'all'; 
+    const custs = window.appState.customers.filter(c => {
+        if(!((c.collector === current) || (!c.collector && current === '子晴'))) return false;
+        const cCat = c.category || 'stairs';
+        if(catFilter !== 'all' && cCat !== catFilter) return false;
+        return true;
+    });
+    list.innerHTML = '';
+    if(custs.length === 0) { list.innerHTML = '<div class="text-center text-gray-400 mt-4">無資料</div>'; return; }
+    custs.forEach((c) => {
+        const catIcon = (c.category || 'stairs') === 'tank' ? '💧' : '🪜';
+        const dateTag = c.serviceDate ? `<span class="ml-2 text-[10px] bg-gray-100 px-1 rounded text-gray-500">${c.serviceDate.slice(5)}</span>` : '';
+        const div = document.createElement('div');
+        div.setAttribute('data-id', c.id);
+        div.className = 'flex items-center justify-between p-3 bg-white border border-gray-100 mb-2 rounded-lg shadow-sm';
+        div.innerHTML = `
+            <div class="flex items-center gap-3 overflow-hidden">
+                <div class="handle cursor-move p-2 touch-none"><i class="fa-solid fa-bars text-gray-400 text-lg"></i></div>
+                <div class="flex-1"><div class="font-bold text-gray-800 text-sm truncate flex items-center">${catIcon} ${c.address} ${dateTag}</div><div class="text-xs text-gray-400">$${c.amount}</div></div>
+            </div>
+            <button onclick="deleteCustomerInManager('${c.id}')" class="ignore-drag text-gray-300 hover:text-red-500 p-2 z-10"><i class="fa-solid fa-trash-can pointer-events-none"></i></button>
+        `;
+        list.appendChild(div);
+    });
+};
+
+window.deleteCustomerInManager = function(id) { window.deleteCustomer(id); };
+
+window.saveNewOrder = async function() {
+    if(!currentUser) return;
+    const list = document.getElementById('manageCustomerList');
+    const itemEls = list.children;
+    const batch = writeBatch(db);
+    let hasUpdates = false;
+    const currentIds = Array.from(itemEls).map(el => el.getAttribute('data-id'));
+    currentIds.forEach((id, index) => {
+        const ref = doc(db, 'artifacts', APP_ID, 'public', 'data', 'customers', id);
+        batch.update(ref, { order: index });
+        hasUpdates = true;
+    });
+    if(hasUpdates) { try { await batch.commit(); } catch(e) { console.error("Order update failed", e); window.showToast("排序儲存失敗"); } }
+};
+
+window.managerAddCustomer = async function() {
+    if(!currentUser) return;
+    const addr = document.getElementById('mgrNewAddr').value.trim();
+    const amt = parseInt(document.getElementById('mgrNewAmt').value);
+    const sDate = document.getElementById('mgrNewServiceDate').value;
+    const cat = window.appState.reportCategory === 'all' ? 'stairs' : window.appState.reportCategory;
+    if(!addr || isNaN(amt)) { alert("請輸入地址和金額"); return; }
+    let maxOrder = 0;
+    window.appState.customers.forEach(c => { if(c.order && c.order > maxOrder) maxOrder = c.order; });
+    const data = {
+        address: addr, amount: amt, category: cat, collector: window.appState.currentCollector,
+        createdAt: serverTimestamp(), order: maxOrder + 1, serviceDate: sDate || ''
+    };
+    try {
+        await addDoc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'customers'), data);
+        document.getElementById('mgrNewAddr').value = '';
+        document.getElementById('mgrNewAmt').value = '';
+        document.getElementById('mgrNewServiceDate').value = '';
+        window.showToast("已新增");
+    } catch(e) { window.showToast("新增失敗"); }
+};
+
+window.saveCustomer = async function() {
+    if(!currentUser) return;
+    const addr = document.getElementById('newCustAddr').value.trim();
+    const amt = parseInt(document.getElementById('newCustAmt').value);
+    const floor = document.getElementById('newCustFloor').value.trim();
+    const sDate = document.getElementById('newCustServiceDate').value;
+    const cat = document.getElementById('editCustCategory').value;
+    const id = window.appState.editingCustomerId;
+    if(!addr || isNaN(amt)) { alert("請填寫地址和金額"); return; }
+    const data = { address: addr, amount: amt, floor: floor, category: cat, collector: window.appState.currentCollector, serviceDate: sDate || '' };
+    try {
+        if(id) { await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'customers', id), data); window.showToast("已更新"); } 
+        else { data.createdAt = serverTimestamp(); data.order = Date.now(); await addDoc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'customers'), data); window.showToast("已儲存"); }
+        closeAddCustomerModal(null);
+    } catch(e) { window.showToast("儲存失敗"); }
+};
+
+window.openEditCustomerModal = function(id, addr, amt, floor, cat, serviceDate) {
+    window.appState.editingCustomerId = id;
+    document.getElementById('customerModalTitle').innerText = '編輯常用客戶';
+    document.getElementById('newCustAddr').value = addr;
+    document.getElementById('newCustAmt').value = amt;
+    document.getElementById('newCustFloor').value = floor || '';
+    document.getElementById('newCustServiceDate').value = serviceDate || '';
+    window.setEditCustCategory(cat || 'stairs');
+    document.getElementById('addCustomerModal').classList.remove('hidden');
+};
+
+// --- Window Functions (UI Logic) ---
+window.setReportCategory = function(cat) {
+    window.appState.reportCategory = cat;
+    const btns = { 'all': 'rep-cat-all', 'stairs': 'rep-cat-stairs', 'tank': 'rep-cat-tank' };
+    Object.values(btns).forEach(id => {
+        const el = document.getElementById(id);
+        if(el) el.className = "flex-1 py-1.5 rounded-md text-sm font-bold text-gray-400 hover:bg-white hover:shadow-sm transition-all border border-transparent";
+    });
+    const active = document.getElementById(btns[cat]);
+    if(active) active.className = "flex-1 py-1.5 rounded-md text-sm font-bold bg-white text-gray-800 shadow-sm transition-all border border-gray-200";
+    window.renderYearlyReport();
+};
+
+window.toggleView = function(viewName) {
+    window.appState.currentView = viewName;
+    ['entry', 'settle', 'settings', 'report'].forEach(v => {
+        document.getElementById(`view-${v}`).classList.add('hidden');
+        const btn = document.getElementById(`nav-${v}`);
+        if(btn) {
+            btn.classList.remove('text-emerald-600'); btn.classList.add('text-gray-400');
+            btn.querySelector('span').className = 'text-[10px] font-medium';
+        }
+    });
+    document.getElementById(`view-${viewName}`).classList.remove('hidden');
+    const active = document.getElementById(`nav-${viewName}`);
+    if(active) {
+        active.classList.remove('text-gray-400'); active.classList.add('text-emerald-600');
+        active.querySelector('span').className = 'text-[10px] font-bold';
+    }
+    window.scrollTo(0,0);
+    refreshCurrentView();
+};
+
+window.addRecord = async function() {
+    if(!currentUser) { window.showToast("尚未連線"); return; }
+    const newRecord = getFormData();
+    if (!newRecord) return;
+    try {
+        await addDoc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'records'), newRecord);
+        clearFormData();
+        window.showToast("✅ 已收款");
+    } catch (e) { console.error(e); window.showToast("❌ 儲存失敗"); }
+};
+
+window.addToPending = async function() {
+    if(!currentUser) { window.showToast("尚未連線"); return; }
+    const newItem = getFormData();
+    if (!newItem) return;
+    try {
+        await addDoc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'pending'), newItem);
+        clearFormData();
+        window.showToast("📋 已加入清單");
+    } catch (e) { console.error(e); window.showToast("❌ 加入失敗"); }
+};
+
+window.completePending = async function(docId, data) {
+    if(!currentUser) return;
+    const record = { ...data, collector: window.appState.currentCollector, createdAt: serverTimestamp() };
+    try {
+        await addDoc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'records'), record);
+        await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'pending', docId));
+        window.showToast("✅ 完成收款");
+    } catch(e) { console.error(e); window.showToast("操作失敗"); }
+};
+
+window.deleteRecord = async function(docId) {
+    if(!currentUser) return;
+    if(confirm("確定刪除此紀錄？")) {
+        await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'records', docId));
+        window.showToast("🗑️ 已刪除");
+    }
+};
+
+window.updateRecordStatus = async function(docId, newStatus) {
+     if(!currentUser) return;
+     try { await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'records', docId), { status: newStatus }); window.showToast("狀態已更新"); } catch(e) { window.showToast("更新失敗"); }
+};
+
+window.deletePending = async function(docId) {
+    if(!currentUser) return;
+    if(confirm("從清單移除？")) { await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'pending', docId)); }
+};
+
+window.deleteCustomer = async function(docId) {
+    if(!currentUser) return;
+    if(confirm("確定從常用名單移除？(不會刪除歷史記帳紀錄)")) {
+        await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'customers', docId));
+        window.showToast("🗑️ 已刪除");
+    }
+};
 // --- 6. 表單與其他輔助功能 ---
 
 function getFormData() {
@@ -13,6 +332,7 @@ function getFormData() {
     const note = document.getElementById('inputNote').value.trim();
     const months = document.getElementById('selectedMonths').value;
     const status = document.getElementById('inputStatus').value || 'completed';
+    // 預約時間
     const appointmentTime = document.getElementById('inputAppointment').value;
 
     if (!address) { window.showToast("⚠️ 請輸入地址！"); document.getElementById('inputAddress').focus(); return null; }
@@ -20,7 +340,7 @@ function getFormData() {
 
     return { 
         date: dateInput, serviceDate: serviceDate, address, floor, months, amount, 
-        type, category, collector, note, status, appointmentTime,
+        type, category, collector, note, status, appointmentTime, 
         createdAt: serverTimestamp() 
     };
 }
@@ -30,7 +350,7 @@ function clearFormData() {
     document.getElementById('inputFloor').value = '';
     document.getElementById('inputAmount').value = '';
     document.getElementById('inputNote').value = '';
-    document.getElementById('inputAppointment').value = '';
+    document.getElementById('inputAppointment').value = ''; // 清空預約
     window.resetMonthPicker();
     window.setStatus('completed'); 
 }
@@ -271,13 +591,12 @@ window.updateReportRecord = async function(docId, date, amount, type, floor, not
 window.deleteReportRecord = async function(docId) { if(!currentUser) return; if(confirm("確定刪除？這月份將變回未收狀態")) { await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'records', docId)); window.closeReportActionModal(null); window.showToast("🗑️ 已刪除"); } };
 
 // --- 8. UI RENDERING (Lists) ---
-// NEW: 修改這裡，將待收清單分為「預約」與「一般」兩區
 window.renderPendingList = function() { 
     const list = document.getElementById('pendingList'); 
     const container = document.getElementById('pendingContainer'); 
     const current = window.appState.currentCollector; 
     
-    // 1. 抓出所有屬於當前收費員的項目
+    // 1. 抓出屬於當前收費員的
     const allItems = window.appState.pending.filter(i => (i.collector === current) || (!i.collector && current === '子晴') );
     
     if (allItems.length === 0) { container.classList.add('hidden'); return; } 
@@ -285,51 +604,42 @@ window.renderPendingList = function() {
     document.getElementById('pendingCount').innerText = allItems.length; 
     list.innerHTML = ''; 
 
-    // 2. 拆分成「預約」和「一般」兩組
+    // 2. 分區：有時間 vs 沒時間
     const appointments = allItems.filter(i => i.appointmentTime);
     const normals = allItems.filter(i => !i.appointmentTime);
 
-    // 3. 預約組：按時間先後排序
+    // 3. 排序
     appointments.sort((a, b) => a.appointmentTime.localeCompare(b.appointmentTime));
-    // 4. 一般組：按建立時間排序 (最新的在上面，或可維持原本順序)
     normals.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
 
-    // 5. 渲染「預約專區」
+    // 4. 渲染預約區
     if (appointments.length > 0) {
         list.innerHTML += `<div class="font-bold text-red-500 mb-2 mt-1 px-1 flex items-center gap-2"><i class="fa-solid fa-calendar-check"></i> 預約 / 急件 (${appointments.length})</div>`;
-        appointments.forEach(item => {
-            list.appendChild(createPendingItem(item, true)); // true 代表是預約項目，可能有特殊樣式
-        });
+        appointments.forEach(item => { list.appendChild(createPendingItem(item, true)); });
     }
 
-    // 6. 渲染「一般路線」
+    // 5. 渲染一般區
     if (normals.length > 0) {
-        // 如果上面有預約，這邊加個分隔線或標題
         if (appointments.length > 0) {
             list.innerHTML += `<div class="font-bold text-gray-500 mb-2 mt-4 px-1 flex items-center gap-2 border-t pt-3"><i class="fa-solid fa-route"></i> 一般路線 (${normals.length})</div>`;
         }
-        normals.forEach(item => {
-            list.appendChild(createPendingItem(item, false));
-        });
+        normals.forEach(item => { list.appendChild(createPendingItem(item, false)); });
     }
 };
 
-// 輔助函式：產生單個待收卡片 HTML (避免代碼重複)
 function createPendingItem(item, isAppointment) {
     const floorId = `p-floor-${item.id}`; 
     const monthsId = `p-months-${item.id}`; 
     const noteId = `p-note-${item.id}`; 
     const typeId = `p-type-${item.id}`; 
     const catIcon = item.category === 'tank' ? '<span class="text-cyan-600">💧</span>' : '<span class="text-orange-600">🪜</span>'; 
-    
     let sTag = ''; 
     if(item.serviceDate) { sTag = `<span class="text-xs bg-cyan-100 text-cyan-700 px-1 rounded ml-1 font-bold">洗:${item.serviceDate.slice(5)}</span>`; } 
     
     let timeTag = '';
-    let bgClass = 'bg-white'; // 預設白色背景
-    
+    let bgClass = 'bg-white';
     if (item.appointmentTime) {
-        bgClass = 'bg-yellow-50 border-yellow-200'; // 預約項目改成黃色背景
+        bgClass = 'bg-yellow-50 border-yellow-200';
         const d = new Date(item.appointmentTime);
         const timeStr = `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
         timeTag = `<div class="bg-red-100 text-red-600 px-2 py-1 rounded text-xs font-bold flex items-center gap-1 mb-2 w-fit shadow-sm"><i class="fa-solid fa-clock"></i> ${timeStr}</div>`;
@@ -552,5 +862,6 @@ window.onload = function() {
     const m = String(today.getMonth() + 1).padStart(2, '0');
     document.getElementById('settleMonthPicker').value = `${y}-${m}`;
     
+    // 讓其他模組也載入後執行一次計算
     setTimeout(() => { window.updateSummary(); }, 500);
 };
