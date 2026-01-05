@@ -77,7 +77,11 @@
                         <input type="hidden" id="inputServiceType" value="stairs">
                     </div>
                     <div class="flex gap-3">
-                        <div class="flex-1"><label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">地址 / 客戶</label><input type="text" id="inputAddress" oninput="debounceCheckPaidStatus(this.value)" placeholder="例如：中正路100號" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-lg focus:border-gray-400 outline-none transition-colors"></div>
+                        <div class="flex-1">
+                            <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">地址 / 客戶</label>
+                            <input type="text" id="inputAddress" list="addressSuggestions" oninput="debounceCheckPaidStatus(this.value)" placeholder="例如：中正路100號" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-lg focus:border-gray-400 outline-none transition-colors">
+                            <datalist id="addressSuggestions"></datalist>
+                        </div>
                         <div class="w-24"><label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">樓層/戶號</label><input type="text" id="inputFloor" placeholder="5F" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-lg text-center focus:border-gray-400 outline-none transition-colors"></div>
                     </div>
                     <div class="bg-gray-50 p-3 rounded-xl border border-gray-200">
