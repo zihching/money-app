@@ -86,10 +86,7 @@ function setupListeners() {
         let custs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         custs.sort((a, b) => (a.order || 0) - (b.order || 0));
         window.appState.customers = custs;
-        
-        // 更新自動建議清單
         if(window.updateAddressSuggestions) window.updateAddressSuggestions(custs);
-        
         refreshCurrentView();
     });
 
@@ -332,11 +329,17 @@ function getFormData() {
     const note = document.getElementById('inputNote').value.trim();
     const months = document.getElementById('selectedMonths').value;
     const status = document.getElementById('inputStatus').value || 'completed';
+    // NEW: 讀取預約時間
+    const appointmentTime = document.getElementById('inputAppointment').value;
 
     if (!address) { window.showToast("⚠️ 請輸入地址！"); document.getElementById('inputAddress').focus(); return null; }
     if (isNaN(amount)) { window.showToast("⚠️ 請輸入金額！"); document.getElementById('inputAmount').focus(); return null; }
 
-    return { date: dateInput, serviceDate: serviceDate, address, floor, months, amount, type, category, collector, note, status, createdAt: serverTimestamp() };
+    return { 
+        date: dateInput, serviceDate: serviceDate, address, floor, months, amount, 
+        type, category, collector, note, status, appointmentTime, // 加入 appointmentTime
+        createdAt: serverTimestamp() 
+    };
 }
 
 function clearFormData() {
@@ -344,6 +347,8 @@ function clearFormData() {
     document.getElementById('inputFloor').value = '';
     document.getElementById('inputAmount').value = '';
     document.getElementById('inputNote').value = '';
+    // NEW: 清空預約時間
+    document.getElementById('inputAppointment').value = '';
     window.resetMonthPicker();
     window.setStatus('completed'); 
 }
@@ -584,7 +589,76 @@ window.updateReportRecord = async function(docId, date, amount, type, floor, not
 window.deleteReportRecord = async function(docId) { if(!currentUser) return; if(confirm("確定刪除？這月份將變回未收狀態")) { await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'records', docId)); window.closeReportActionModal(null); window.showToast("🗑️ 已刪除"); } };
 
 // --- 8. UI RENDERING (Lists) ---
-window.renderPendingList = function() { const list = document.getElementById('pendingList'); const container = document.getElementById('pendingContainer'); const current = window.appState.currentCollector; const items = window.appState.pending.filter(i => (i.collector === current) || (!i.collector && current === '子晴') ); if (items.length === 0) { container.classList.add('hidden'); return; } container.classList.remove('hidden'); document.getElementById('pendingCount').innerText = items.length; list.innerHTML = ''; items.forEach(item => { const floorId = `p-floor-${item.id}`; const monthsId = `p-months-${item.id}`; const noteId = `p-note-${item.id}`; const typeId = `p-type-${item.id}`; const catIcon = item.category === 'tank' ? '<span class="text-cyan-600">💧</span>' : '<span class="text-orange-600">🪜</span>'; let sTag = ''; if(item.serviceDate) { sTag = `<span class="text-xs bg-cyan-100 text-cyan-700 px-1 rounded ml-1 font-bold">洗:${item.serviceDate.slice(5)}</span>`; } const div = document.createElement('div'); div.className = 'bg-white p-3 rounded-xl border border-gray-200 shadow-sm relative'; div.innerHTML = ` <div class="flex justify-between items-start mb-2"> <div class="flex items-center gap-2"> <div class="text-xl">${catIcon}</div> <div> <div class="font-bold text-lg text-gray-800 flex items-center">${item.address} ${sTag}</div> </div> </div> <div class="font-bold text-emerald-600 text-lg">$${item.amount}</div> </div> <div class="space-y-2"> <div class="flex gap-2"> <input id="${monthsId}" value="${item.months || ''}" readonly onclick="openPendingMonthPicker('${item.id}', '${item.months||''}')" placeholder="選擇月份" class="bg-blue-50 border border-blue-200 rounded p-2 text-sm w-1/2 text-center text-blue-700 font-bold cursor-pointer"> <input id="${floorId}" value="${item.floor || ''}" placeholder="樓層/戶號" class="bg-gray-50 border rounded p-2 text-sm w-1/2 text-center font-medium"> </div> <div class="flex gap-2 items-center"> <select id="${typeId}" class="bg-gray-50 border rounded p-2 text-sm w-20"> <option value="cash" ${item.type === 'cash' ? 'selected' : ''}>現金</option> <option value="transfer" ${item.type === 'transfer' ? 'selected' : ''}>匯款</option> <option value="linepay" ${item.type === 'linepay' ? 'selected' : ''}>LinePay</option> <option value="dad" ${item.type === 'dad' ? 'selected' : ''}>匯給爸爸</option> </select> <input id="${noteId}" value="${item.note || ''}" placeholder="備註..." class="bg-gray-50 border rounded p-2 text-sm flex-1"> <button onclick="openConfirmCollectionModal('${item.id}', ${item.amount}, '${item.address}', '${item.category || 'stairs'}', '${item.serviceDate || ''}')" class="bg-green-500 text-white w-10 h-10 rounded-full shadow flex items-center justify-center active:scale-90 transition-transform flex-shrink-0"> <i class="fa-solid fa-check"></i> </button> </div> </div> <button onclick="deletePending('${item.id}')" class="absolute top-2 right-2 text-gray-300 hover:text-red-400 p-1"><i class="fa-solid fa-times"></i></button> `; list.appendChild(div); }); };
+window.renderPendingList = function() { 
+    const list = document.getElementById('pendingList'); 
+    const container = document.getElementById('pendingContainer'); 
+    const current = window.appState.currentCollector; 
+    
+    // 過濾並排序
+    // 排序邏輯：有預約時間的排最上面 (時間越早越前)，沒有時間的排後面
+    const items = window.appState.pending
+        .filter(i => (i.collector === current) || (!i.collector && current === '子晴'))
+        .sort((a, b) => {
+            if (a.appointmentTime && !b.appointmentTime) return -1; // a 有時間，排前
+            if (!a.appointmentTime && b.appointmentTime) return 1;  // b 有時間，排前
+            if (a.appointmentTime && b.appointmentTime) {
+                // 都有時間，比大小 (字串比較即可，因為格式是 ISO)
+                return a.appointmentTime.localeCompare(b.appointmentTime);
+            }
+            return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0); // 都沒時間，按建立順序
+        });
+
+    if (items.length === 0) { container.classList.add('hidden'); return; } 
+    container.classList.remove('hidden'); 
+    document.getElementById('pendingCount').innerText = items.length; 
+    list.innerHTML = ''; 
+    
+    items.forEach(item => { 
+        const floorId = `p-floor-${item.id}`; 
+        const monthsId = `p-months-${item.id}`; 
+        const noteId = `p-note-${item.id}`; 
+        const typeId = `p-type-${item.id}`; 
+        const catIcon = item.category === 'tank' ? '<span class="text-cyan-600">💧</span>' : '<span class="text-orange-600">🪜</span>'; 
+        
+        let sTag = ''; 
+        if(item.serviceDate) { sTag = `<span class="text-xs bg-cyan-100 text-cyan-700 px-1 rounded ml-1 font-bold">洗:${item.serviceDate.slice(5)}</span>`; } 
+        
+        // NEW: 顯示預約時間標籤
+        let timeTag = '';
+        if (item.appointmentTime) {
+            const d = new Date(item.appointmentTime);
+            const timeStr = `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+            timeTag = `<div class="bg-red-100 text-red-600 px-2 py-1 rounded text-xs font-bold flex items-center gap-1 mb-1 w-fit"><i class="fa-solid fa-clock"></i> 預約: ${timeStr}</div>`;
+        }
+
+        const div = document.createElement('div'); 
+        div.className = 'bg-white p-3 rounded-xl border border-gray-200 shadow-sm relative'; 
+        div.innerHTML = ` 
+            ${timeTag}
+            <div class="flex justify-between items-start mb-2"> 
+                <div class="flex items-center gap-2"> 
+                    <div class="text-xl">${catIcon}</div> 
+                    <div> <div class="font-bold text-lg text-gray-800 flex items-center">${item.address} ${sTag}</div> </div> 
+                </div> 
+                <div class="font-bold text-emerald-600 text-lg">$${item.amount}</div> 
+            </div> 
+            <div class="space-y-2"> 
+                <div class="flex gap-2"> 
+                    <input id="${monthsId}" value="${item.months || ''}" readonly onclick="openPendingMonthPicker('${item.id}', '${item.months||''}')" placeholder="選擇月份" class="bg-blue-50 border border-blue-200 rounded p-2 text-sm w-1/2 text-center text-blue-700 font-bold cursor-pointer"> 
+                    <input id="${floorId}" value="${item.floor || ''}" placeholder="樓層/戶號" class="bg-gray-50 border rounded p-2 text-sm w-1/2 text-center font-medium"> 
+                </div> 
+                <div class="flex gap-2 items-center"> 
+                    <select id="${typeId}" class="bg-gray-50 border rounded p-2 text-sm w-20"> <option value="cash" ${item.type === 'cash' ? 'selected' : ''}>現金</option> <option value="transfer" ${item.type === 'transfer' ? 'selected' : ''}>匯款</option> <option value="linepay" ${item.type === 'linepay' ? 'selected' : ''}>LinePay</option> <option value="dad" ${item.type === 'dad' ? 'selected' : ''}>匯給爸爸</option> </select> 
+                    <input id="${noteId}" value="${item.note || ''}" placeholder="備註..." class="bg-gray-50 border rounded p-2 text-sm flex-1"> 
+                    <button onclick="openConfirmCollectionModal('${item.id}', ${item.amount}, '${item.address}', '${item.category || 'stairs'}', '${item.serviceDate || ''}')" class="bg-green-500 text-white w-10 h-10 rounded-full shadow flex items-center justify-center active:scale-90 transition-transform flex-shrink-0"> <i class="fa-solid fa-check"></i> </button> 
+                </div> 
+            </div> 
+            <button onclick="deletePending('${item.id}')" class="absolute top-2 right-2 text-gray-300 hover:text-red-400 p-1"><i class="fa-solid fa-times"></i></button> 
+        `; 
+        list.appendChild(div); 
+    }); 
+};
+
 window.renderRecords = function() { const list = document.getElementById('recordList'); const records = window.appState.records.filter(r => { const rCol = r.collector || '子晴'; return rCol === window.appState.currentCollector; }); list.innerHTML = ''; document.getElementById('recordCount').innerText = records.length; if (records.length === 0) { list.innerHTML = `<div class="text-center text-gray-400 py-12 opacity-60"><i class="fa-solid fa-clipboard-list text-4xl mb-3"></i><p>尚無 ${window.appState.currentCollector} 的紀錄</p></div>`; return; } records.forEach(record => { let tagClass = 'tag-cash'; let tagText = '現金'; if(record.type === 'transfer') { tagClass = 'tag-transfer'; tagText = '匯款'; } else if(record.type === 'linepay') { tagClass = 'tag-linepay'; tagText = 'LinePay'; } else if(record.type === 'dad') { tagClass = 'tag-dad'; tagText = '已匯給爸爸'; } let noteHtml = record.note ? `<div class="text-sm mt-2 p-2 rounded-lg border border-gray-100 bg-gray-50 text-gray-600 flex items-center gap-2"><i class="fa-regular fa-comment-dots"></i> <span>${record.note}</span></div>` : ''; const dateObj = new Date(record.date); const displayDate = `${dateObj.getMonth()+1}/${dateObj.getDate()}`; let sTag = ''; if(record.category === 'tank') sTag = `<span class="text-xs font-bold px-2 py-0.5 rounded-full tag-tank flex items-center gap-1">💧 洗水塔</span>`; else sTag = `<span class="text-xs font-bold px-2 py-0.5 rounded-full tag-stairs flex items-center gap-1">🪜 洗樓梯</span>`; let serviceTag = ''; if(record.serviceDate) { const sDate = new Date(record.serviceDate); const sDateStr = `${sDate.getMonth()+1}/${sDate.getDate()}`; serviceTag = `<span class="text-xs font-bold px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-700 flex items-center gap-1 ml-1"><i class="fa-solid fa-soap"></i> 洗:${sDateStr}</span>`; } let statusHtml = ''; if(record.status === 'no_receipt') { statusHtml = `<div class="mt-2 bg-red-50 p-2 rounded-lg border border-red-200 flex justify-between items-center"><span class="text-xs font-bold text-red-600"><i class="fa-solid fa-triangle-exclamation"></i> 待給收據</span><button onclick="updateRecordStatus('${record.id}', 'completed')" class="px-3 py-1 bg-red-500 text-white text-xs rounded-full shadow active:scale-95">已補單</button></div>`; } else if(record.status === 'no_payment') { statusHtml = `<div class="mt-2 bg-orange-50 p-2 rounded-lg border border-orange-200 flex justify-between items-center"><span class="text-xs font-bold text-orange-600"><i class="fa-solid fa-hourglass-half"></i> 待確認匯款</span><button onclick="updateRecordStatus('${record.id}', 'completed')" class="px-3 py-1 bg-orange-500 text-white text-xs rounded-full shadow active:scale-95">款項已入</button></div>`; } const item = document.createElement('div'); item.className = 'card p-4 relative border-l-4 ' + (record.type === 'cash' ? 'border-gray-400' : 'border-gray-300'); item.innerHTML = ` <div class="flex justify-between items-start"> <div class="flex-1 mr-2"> <div class="flex items-center gap-2 mb-1 flex-wrap"> <span class="text-xs font-bold text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">${displayDate}</span> ${sTag} ${serviceTag} <span class="text-xs font-bold px-2 py-0.5 rounded-full ${tagClass} flex items-center gap-1">${tagText}</span> </div> <div class="text-xl font-bold text-gray-800 leading-tight mb-1">${record.address} <span class="text-base font-normal text-gray-500 ml-1">${record.floor || ''}</span></div> <div class="text-sm text-blue-600 font-bold bg-blue-50 inline-block px-2 py-0.5 rounded border border-blue-100"><i class="fa-regular fa-calendar-check mr-1"></i> ${record.months || '未填月份'}</div> </div> <div class="text-right"><div class="text-2xl font-bold font-mono text-gray-800">$${record.amount.toLocaleString()}</div></div> </div> ${statusHtml} ${noteHtml} <button onclick="deleteRecord('${record.id}')" class="absolute top-2 right-2 text-gray-200 hover:text-red-400 p-2"><i class="fa-solid fa-trash-can"></i></button> `; list.appendChild(item); }); };
 
 // --- 9. Helper Functions ---
