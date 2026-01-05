@@ -86,10 +86,7 @@ function setupListeners() {
         let custs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         custs.sort((a, b) => (a.order || 0) - (b.order || 0));
         window.appState.customers = custs;
-        
-        // 更新地址建議清單
         if(window.updateAddressSuggestions) window.updateAddressSuggestions(custs);
-        
         refreshCurrentView();
     });
 
@@ -107,7 +104,6 @@ function refreshCurrentView() {
     if(window.appState.currentView === 'settings') { window.renderCustomerSettings(); }
     if(!document.getElementById('customerModal').classList.contains('hidden')) { window.renderCustomerSelect(); }
     if(!document.getElementById('manageCustomerModal').classList.contains('hidden')) { window.renderManageCustomerList(); }
-    
     const addr = document.getElementById('inputAddress');
     if(addr && addr.value) window.checkPaidStatus(addr.value);
 }
@@ -332,7 +328,6 @@ function getFormData() {
     const note = document.getElementById('inputNote').value.trim();
     const months = document.getElementById('selectedMonths').value;
     const status = document.getElementById('inputStatus').value || 'completed';
-    // 預約時間
     const appointmentTime = document.getElementById('inputAppointment').value;
 
     if (!address) { window.showToast("⚠️ 請輸入地址！"); document.getElementById('inputAddress').focus(); return null; }
@@ -350,7 +345,7 @@ function clearFormData() {
     document.getElementById('inputFloor').value = '';
     document.getElementById('inputAmount').value = '';
     document.getElementById('inputNote').value = '';
-    document.getElementById('inputAppointment').value = ''; // 清空預約
+    document.getElementById('inputAppointment').value = '';
     window.resetMonthPicker();
     window.setStatus('completed'); 
 }
@@ -701,7 +696,33 @@ window.renderCustomerSettings = function() { const list = document.getElementByI
 const dateTag = c.serviceDate ? `<span class="ml-1 text-[10px] bg-gray-100 text-gray-500 px-1 rounded">${c.serviceDate.slice(5)}</span>` : '';
 div.innerHTML = ` <div class="text-sm"> <div class="font-bold text-gray-800"><span class="mr-1">${catIcon}</span> ${c.address} ${dateTag} <span class="text-gray-400 text-xs font-normal">${c.floor || '不固定'}</span></div> <div class="text-emerald-600 font-bold">$${c.amount}</div> </div> <div class="flex"> <button onclick="openHistory('${c.address}')" class="text-orange-400 hover:text-orange-600 px-2 py-2"><i class="fa-solid fa-clock-rotate-left"></i></button> <button onclick="openEditCustomerModal('${c.id}', '${c.address}', ${c.amount}, '${c.floor || ''}', '${c.category || 'stairs'}', '${c.serviceDate || ''}')" class="text-gray-400 hover:text-blue-500 px-2 py-2"><i class="fa-solid fa-pen"></i></button> <button onclick="deleteCustomer('${c.id}')" class="text-gray-300 hover:text-red-500 px-2 py-2"><i class="fa-solid fa-trash-can"></i></button> </div> `; list.appendChild(div); }); };
 window.renderCustomerSelect = function() { const list = document.getElementById('customerSelectList'); const search = document.getElementById('customerSearch').value.toLowerCase(); const current = window.appState.currentCollector; const customers = window.appState.customers.filter(c => (c.collector === current) || (!c.collector && current === '子晴') ); list.innerHTML = ''; const filtered = customers.filter(c => c.address.toLowerCase().includes(search)); document.getElementById('customerModalCollector').innerText = current; if(filtered.length === 0 && search.length > 0) { const btn = document.createElement('button'); btn.className = 'w-full p-4 bg-blue-50 text-blue-600 rounded-xl font-bold flex items-center justify-center border border-blue-200 active:bg-blue-100'; btn.onclick = () => selectCustomer(search, '', '', 'stairs'); btn.innerHTML = `<i class="fa-solid fa-plus mr-2"></i> 直接填寫：${search}`; list.appendChild(btn); return; } filtered.forEach(c => { const lastRec = window.appState.records.find(r => r.address === c.address); let lastInfo = '尚無紀錄'; if(lastRec) { const d = new Date(lastRec.date); lastInfo = `上次：${d.getMonth()+1}/${d.getDate()} (${lastRec.months || '?'}) - ${lastRec.collector}`; } const btn = document.createElement('button'); btn.className = 'list-btn w-full p-3 bg-gray-50 border border-gray-100 rounded-xl flex justify-between items-center text-left mb-2 active:bg-blue-50'; btn.onclick = () => selectCustomer(c.address, c.floor, c.amount, c.category); const catIcon = c.category === 'tank' ? '💧' : '🪜'; btn.innerHTML = ` <div> <div class="font-bold text-gray-800 text-lg"><span class="mr-1">${catIcon}</span>${c.address} <span class="text-sm font-normal text-gray-500">${c.floor || ''}</span></div> <div class="text-xs text-gray-400 mt-1">${lastInfo}</div> </div> <div class="font-bold text-emerald-600">$${c.amount}</div> `; list.appendChild(btn); }); };
-window.selectCustomer = function(addr, floor, amount, category) { document.getElementById('inputAddress').value = addr; document.getElementById('inputFloor').value = floor || ''; document.getElementById('inputAmount').value = amount || ''; if(category) window.setServiceCategory(category); window.checkPaidStatus(addr); closeCustomerSelect(null); showToast("已填入資料"); };
+
+// NEW: 修改這裡，加入樓層提示邏輯
+window.selectCustomer = function(addr, floor, amount, category) { 
+    document.getElementById('inputAddress').value = addr; 
+    document.getElementById('inputFloor').value = floor || ''; 
+    document.getElementById('inputAmount').value = amount || ''; 
+    if(category) window.setServiceCategory(category); 
+    
+    // 智慧提示：查詢上次收費的樓層
+    const history = window.appState.records
+        .filter(r => r.address === addr)
+        .sort((a,b) => b.date.localeCompare(a.date)); // 日期新到舊排序
+    
+    if (history.length > 0) {
+        const last = history[0];
+        const lastFloor = last.floor ? `${last.floor}` : '無樓層';
+        const d = new Date(last.date);
+        const lastDate = `${d.getMonth()+1}/${d.getDate()}`;
+        // 顯示 4秒 的提示，讓你有時間看
+        window.showToast(`ℹ️ 上次紀錄：${lastDate} (${lastFloor})`, 4000);
+    } else {
+        window.showToast("已填入資料 (尚無歷史紀錄)");
+    }
+
+    window.checkPaidStatus(addr); 
+    closeCustomerSelect(null); 
+};
 
 // --- 13. Auto-Complete (New Helper) ---
 window.updateAddressSuggestions = function(customers) {
@@ -835,7 +856,8 @@ window.updateSummary = function() {
 window.clearSettleDates = function() { document.getElementById('settleStartDate').value = ''; document.getElementById('settleEndDate').value = ''; window.updateSummary(); };
 window.calculateSettlement = function() { window.updateSummary(); };
 window.addTag = function(text) { const el = document.getElementById('inputNote'); el.value = el.value ? el.value + `，${text}` : text; };
-window.showToast = function(msg) { const t = document.getElementById('toast'); t.innerText = msg; t.style.display = 'block'; t.style.opacity = '1'; t.style.transform = 'translate(-50%, 0)'; setTimeout(() => { t.style.display = 'none'; }, 2000); };
+// 修改 showToast 讓它支援自訂時間
+window.showToast = function(msg, duration = 2000) { const t = document.getElementById('toast'); t.innerText = msg; t.style.display = 'block'; t.style.opacity = '1'; t.style.transform = 'translate(-50%, 0)'; setTimeout(() => { t.style.display = 'none'; }, duration); };
 window.exportData = function() { const data = window.appState; const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `雲端收費備份_${new Date().toISOString().slice(0,10)}.json`; a.click(); };
 window.printAllRecords = function() { const records = window.appState.records; if (records.length === 0) { window.showToast("目前沒有紀錄可列印"); return; } let totalCash = 0; let totalTransfer = 0; let totalLinePay = 0; let totalDad = 0; let totalAmount = 0; records.forEach(r => { if (r.status === 'no_payment') return; if(r.type === 'cash') totalCash += r.amount; else if(r.type === 'transfer') totalTransfer += r.amount; else if(r.type === 'linepay') totalLinePay += r.amount; else if(r.type === 'dad') totalDad += r.amount; totalAmount += r.amount; }); const dateStr = new Date().toLocaleDateString('zh-TW', {year: 'numeric', month: '2-digit', day: '2-digit'}); let html = ` <div class="print-title">清潔收費總報表</div> <div style="text-align:center; margin-bottom:10px;">列印日期：${dateStr}</div> <div class="print-summary"> <div> <div style="font-size:12px;">本期總收入</div> <div style="font-size:16px; font-weight:bold;">$${totalAmount.toLocaleString()}</div> </div> <div> <div style="font-size:12px;">現金總額</div> <div style="font-size:16px; font-weight:bold;">$${totalCash.toLocaleString()}</div> </div> <div> <div style="font-size:12px;">匯款總額</div> <div style="font-size:16px; font-weight:bold;">$${totalTransfer.toLocaleString()}</div> </div> <div> <div style="font-size:12px;">LinePay</div> <div style="font-size:16px; font-weight:bold;">$${totalLinePay.toLocaleString()}</div> </div> <div> <div style="font-size:12px;">已匯給爸爸</div> <div style="font-size:16px; font-weight:bold;">$${totalDad.toLocaleString()}</div> </div> </div> <table class="print-table"> <thead> <tr> <th width="12%">日期</th> <th width="10%">經手人</th> <th width="25%">地址/客戶</th> <th width="10%">項目</th> <th width="10%">金額</th> <th width="10%">方式</th> <th width="13%">月份</th> <th width="10%">備註</th> </tr> </thead> <tbody> `; records.forEach(r => { const d = new Date(r.date); const dStr = `${d.getMonth()+1}/${d.getDate()}`; const cat = r.category === 'tank' ? '水塔' : '樓梯'; let type = '現金'; if(r.type === 'transfer') type = '匯款'; if(r.type === 'linepay') type = 'LinePay'; if(r.type === 'dad') type = '已匯爸'; let note = r.note || ''; if(r.status === 'no_receipt') note += ' (欠收據)'; if(r.status === 'no_payment') note += ' (未入帳)'; const collector = r.collector || '子晴'; const floor = r.floor ? `(${r.floor})` : ''; html += ` <tr> <td>${dStr}</td> <td>${collector}</td> <td>${r.address} ${floor}</td> <td>${cat}</td> <td style="font-weight:bold;">$${r.amount.toLocaleString()}</td> <td>${type}</td> <td style="font-size:11px;">${r.months || ''}</td> <td style="font-size:11px;">${note}</td> </tr> `; }); html += ` </tbody> </table> `; document.getElementById('printContainer').innerHTML = html; window.print(); };
 window.openAddCustomerModal = function() { window.appState.editingCustomerId = null; document.getElementById('customerModalTitle').innerHTML = '<i class="fa-solid fa-user-plus text-green-600"></i> 新增常用客戶'; document.getElementById('newCustAddr').value = ''; document.getElementById('newCustAmt').value = ''; document.getElementById('newCustFloor').value = ''; document.getElementById('newCustServiceDate').value = ''; document.getElementById('addCustomerModal').classList.remove('hidden'); window.setEditCustCategory('stairs'); setTimeout(() => document.getElementById('newCustAddr').focus(), 100); };
@@ -862,6 +884,5 @@ window.onload = function() {
     const m = String(today.getMonth() + 1).padStart(2, '0');
     document.getElementById('settleMonthPicker').value = `${y}-${m}`;
     
-    // 讓其他模組也載入後執行一次計算
     setTimeout(() => { window.updateSummary(); }, 500);
 };
