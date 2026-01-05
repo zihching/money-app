@@ -110,6 +110,12 @@
                          <input type="hidden" id="inputStatus" value="completed">
                     </div>
                     <div><label class="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wider">備註</label><textarea id="inputNote" rows="1" placeholder="其他..." class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-gray-400 outline-none h-[54px] transition-colors"></textarea></div>
+                    
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider"><i class="fa-solid fa-clock mr-1"></i> 預約時間 (選填)</label>
+                        <input type="datetime-local" id="inputAppointment" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-lg text-gray-700 outline-none focus:border-blue-400 transition-colors">
+                    </div>
+
                     <div class="grid grid-cols-2 gap-2 mt-2">
                         <button onclick="addToPending()" class="w-full py-4 rounded-xl text-lg font-bold bg-gray-200 text-gray-600 shadow active:scale-95 transition-all flex justify-center items-center"><i class="fa-solid fa-list-check mr-2"></i> 加入清單</button>
                         <button onclick="addRecord()" class="w-full btn-primary py-4 rounded-xl text-lg font-bold shadow-lg shadow-gray-300 flex justify-center items-center gap-2 transition-all active:scale-95" id="addBtn"><i class="fa-solid fa-check mr-2"></i> 直接收款</button>
