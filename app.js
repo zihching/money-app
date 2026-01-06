@@ -21,7 +21,9 @@ window.appState = {
     pendingMonthTargetId: null,
     currentView: 'entry',
     reportBatchMonths: new Set(),
-    tempModalSet: new Set()
+    tempModalSet: new Set(),
+    deleteTargetId: null, // NEW: 刪除目標ID
+    deleteType: null      // NEW: 刪除類型 (single 或 all)
 };
 
 // --- 2. Firebase 設定 ---
@@ -104,7 +106,6 @@ function refreshCurrentView() {
     if(window.appState.currentView === 'settings') { window.renderCustomerSettings(); }
     if(!document.getElementById('customerModal').classList.contains('hidden')) { window.renderCustomerSelect(); }
     if(!document.getElementById('manageCustomerModal').classList.contains('hidden')) { window.renderManageCustomerList(); }
-    
     const addr = document.getElementById('inputAddress');
     if(addr && addr.value) window.checkPaidStatus(addr.value);
 }
@@ -302,9 +303,78 @@ window.updateRecordStatus = async function(docId, newStatus) {
      try { await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'records', docId), { status: newStatus }); window.showToast("狀態已更新"); } catch(e) { window.showToast("更新失敗"); }
 };
 
-window.deletePending = async function(docId) {
+// --- NEW: 待收地址修改函式 ---
+window.updatePendingAddress = async function(docId, newAddress) {
+    if(!currentUser || !newAddress) return;
+    try {
+        await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'pending', docId), { address: newAddress });
+        // 不需 toast，自動儲存
+    } catch(e) { console.error(e); window.showToast("更新地址失敗"); }
+};
+
+// --- NEW: 刪除確認相關函式 ---
+window.deletePending = function(docId) {
+    window.openDeleteModal('single', docId);
+};
+
+window.confirmClearAllPending = function() {
+    // 檢查是否有資料
+    const count = document.getElementById('pendingCount').innerText;
+    if (count === '0') { window.showToast("清單已經是空的了"); return; }
+    window.openDeleteModal('all', null);
+};
+
+window.openDeleteModal = function(type, id) {
+    window.appState.deleteType = type;
+    window.appState.deleteTargetId = id;
+    const textEl = document.getElementById('deleteConfirmText');
+    const btn = document.getElementById('confirmDeleteBtn');
+    
+    if (type === 'all') {
+        textEl.innerText = "這將清空「所有」待收項目，無法復原。";
+        btn.innerText = "全部清空";
+        btn.onclick = window.doClearAllPending;
+    } else {
+        textEl.innerText = "確定移除此待收項目？";
+        btn.innerText = "確定刪除";
+        btn.onclick = () => window.doDeletePending(window.appState.deleteTargetId);
+    }
+    
+    document.getElementById('deleteConfirmModal').classList.remove('hidden');
+};
+
+window.closeDeleteModal = function(e) {
+    if(e && e.target !== e.currentTarget) return;
+    document.getElementById('deleteConfirmModal').classList.add('hidden');
+};
+
+window.doDeletePending = async function(docId) {
     if(!currentUser) return;
-    if(confirm("從清單移除？")) { await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'pending', docId)); }
+    await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'pending', docId));
+    window.closeDeleteModal(null);
+    window.showToast("🗑️ 已刪除");
+};
+
+window.doClearAllPending = async function() {
+    if(!currentUser) return;
+    const current = window.appState.currentCollector;
+    // 只刪除當前收費員的清單
+    const items = window.appState.pending.filter(i => (i.collector === current) || (!i.collector && current === '子晴') );
+    
+    const batch = writeBatch(db);
+    items.forEach(item => {
+        const ref = doc(db, 'artifacts', APP_ID, 'public', 'data', 'pending', item.id);
+        batch.delete(ref);
+    });
+    
+    try {
+        await batch.commit();
+        window.closeDeleteModal(null);
+        window.showToast("🗑️ 清單已清空");
+    } catch(e) {
+        console.error(e);
+        window.showToast("清空失敗");
+    }
 };
 
 window.deleteCustomer = async function(docId) {
@@ -623,6 +693,7 @@ window.renderPendingList = function() {
     }
 };
 
+// NEW: 產生待收卡片 (包含解決重疊與編輯地址)
 function createPendingItem(item, isAppointment) {
     const floorId = `p-floor-${item.id}`; 
     const monthsId = `p-months-${item.id}`; 
@@ -643,14 +714,18 @@ function createPendingItem(item, isAppointment) {
 
     const div = document.createElement('div'); 
     div.className = `${bgClass} p-3 rounded-xl border shadow-sm relative mb-2`; 
+    // NEW: 在標題列加入 pr-8 (padding-right: 2rem) 避免文字與右上角 X 重疊
     div.innerHTML = ` 
         ${timeTag}
-        <div class="flex justify-between items-start mb-2"> 
-            <div class="flex items-center gap-2"> 
+        <div class="flex justify-between items-start mb-2 pr-8"> 
+            <div class="flex items-center gap-2 flex-1"> 
                 <div class="text-xl">${catIcon}</div> 
-                <div> <div class="font-bold text-lg text-gray-800 flex items-center">${item.address} ${sTag}</div> </div> 
+                <div class="w-full">
+                    <input type="text" value="${item.address}" onchange="updatePendingAddress('${item.id}', this.value)" class="font-bold text-lg text-gray-800 bg-transparent w-full focus:bg-gray-50 rounded px-1 outline-none border-b border-transparent focus:border-gray-300 transition-colors">
+                    ${sTag}
+                </div> 
             </div> 
-            <div class="font-bold text-emerald-600 text-lg">$${item.amount}</div> 
+            <div class="font-bold text-emerald-600 text-lg flex-shrink-0">$${item.amount}</div> 
         </div> 
         <div class="space-y-2"> 
             <div class="flex gap-2"> 
@@ -712,7 +787,7 @@ window.selectCustomer = function(addr, floor, amount, category) { document.getEl
 window.updateAddressSuggestions = function(customers) {
     const dataList = document.getElementById('addressSuggestions');
     if(!dataList) return;
-    dataList.innerHTML = ''; 
+    dataList.innerHTML = ''; // 清空舊的
     const uniqueAddresses = new Set(customers.map(c => c.address));
     uniqueAddresses.forEach(addr => {
         const option = document.createElement('option');
@@ -736,8 +811,6 @@ window.showBreakdown = function(type) {
         eDate = `${y}-${m}-${new Date(y, m, 0).getDate()}`;
         rangeText = `${y}年 ${m}月`;
     }
-    
-    // NEW: 修正篩選邏輯，讓 'no_receipt' 和 'no_payment' 能正確顯示
     let filteredRecords = window.appState.records.filter(r => {
         if (sDate && r.date < sDate) return false;
         if (eDate && r.date > eDate) return false;
@@ -748,12 +821,10 @@ window.showBreakdown = function(type) {
         if (type === 'no_receipt') return r.status === 'no_receipt';
         if (type === 'no_payment') return r.status === 'no_payment';
 
-        // 如果是看現金或匯款，就排除欠款項目
         if (r.status === 'no_payment') return false; 
         return r.type === type;
     });
 
-    // 設定標題
     if(type === 'cash') title.innerText = '現金明細';
     else if(type === 'transfer') title.innerText = '匯款明細';
     else if(type === 'no_receipt') title.innerText = '欠收據清單';
@@ -841,7 +912,7 @@ window.updateSummary = function() {
     document.getElementById('finalToDad').innerText = fmt(finalToDad); 
     document.getElementById('categoryBreakdown').innerHTML = ` <div class="bg-white p-3 rounded-lg border border-orange-200 text-center"> <div class="text-xs text-orange-600 font-bold mb-1">🪜 洗樓梯 (全部)</div> <div class="text-xl font-bold text-gray-800">${fmt(catStats.stairs)}</div> </div> <div class="bg-white p-3 rounded-lg border border-cyan-200 text-center"> <div class="text-xs text-cyan-600 font-bold mb-1">💧 洗水塔 (全部)</div> <div class="text-xl font-bold text-gray-800">${fmt(catStats.tank)}</div> </div> `; 
     
-    // NEW: 讓警告訊息可點擊
+    // NEW: 警告框加上點擊事件
     const warningContainer = document.getElementById('settleWarnings'); 
     warningContainer.innerHTML = ''; 
     if (pendingReceiptCount > 0 || pendingPaymentCount > 0) { 
