@@ -162,8 +162,22 @@
                         <div class="bg-purple-50 p-3 rounded-xl border border-purple-200 text-center opacity-70"><div class="text-xs text-purple-700 mb-1">已匯給爸爸</div><div class="font-bold text-purple-800 text-lg" id="settleDad">$0</div></div>
                     </div>
                     <div class="flex justify-between items-center px-2 pt-2 border-t border-gray-100"><div><span class="font-bold text-gray-600 block">個人總營收</span><span class="text-[10px] text-gray-400">(含給爸爸的)</span></div><span class="font-bold text-2xl text-emerald-600" id="settleTotal">$0</span></div>
-                    <div class="bg-yellow-50 p-4 rounded-xl border border-yellow-200 shadow-sm"><label class="block text-sm font-bold text-yellow-800 mb-2"><i class="fa-solid fa-user-tag mr-1"></i> 我的薪水 (本月)</label><div class="flex items-center bg-white rounded-lg px-3 border border-yellow-200"><span class="text-xl mr-2 text-gray-400">$</span><input type="number" id="mySalary" value="0" inputmode="decimal" pattern="[0-9]*" oninput="calculateSettlement()" class="w-full py-3 text-2xl font-bold text-gray-800 text-right outline-none"></div></div>
-                    <div class="bg-gradient-to-br from-emerald-500 to-teal-600 p-5 rounded-xl text-center shadow-lg text-white transform scale-105"><div class="text-sm text-emerald-100 mb-1 font-medium">最後給爸爸的錢</div><div class="text-4xl font-bold tracking-tight" id="finalToDad">$0</div><div class="text-[10px] text-emerald-200 mt-1">(現金+匯款+LinePay) - 薪水</div></div>
+                    
+                    <div class="bg-yellow-50 p-4 rounded-xl border border-yellow-200 shadow-sm">
+                        <label class="block text-sm font-bold text-yellow-800 mb-2">
+                            <i class="fa-solid fa-file-invoice-dollar mr-1"></i> 扣除額 / 薪水支出
+                        </label>
+                        <div id="expenseList" class="space-y-2 mb-3">
+                            </div>
+                        <button onclick="addExpenseRow()" class="w-full py-2 bg-white border border-yellow-300 text-yellow-700 rounded-lg text-sm font-bold shadow-sm active:bg-yellow-50">
+                            <i class="fa-solid fa-plus"></i> 新增支出項目
+                        </button>
+                        <div class="mt-3 text-right text-sm text-yellow-800 font-bold">
+                            共扣除: <span id="totalExpensesDisplay">$0</span>
+                        </div>
+                    </div>
+
+                    <div class="bg-gradient-to-br from-emerald-500 to-teal-600 p-5 rounded-xl text-center shadow-lg text-white transform scale-105"><div class="text-sm text-emerald-100 mb-1 font-medium">最後給爸爸的錢</div><div class="text-4xl font-bold tracking-tight" id="finalToDad">$0</div><div class="text-[10px] text-emerald-200 mt-1">(現金+匯款+LinePay) - 總扣除額</div></div>
                     <div class="mt-8 pt-4 border-t border-gray-200"><h3 class="text-sm font-bold text-gray-400 mb-3">其他人員參考資料</h3><div id="collectorBreakdown" class="space-y-2"></div><div class="grid grid-cols-2 gap-3 mt-3" id="categoryBreakdown"></div></div>
                 </div>
             </div>
@@ -306,6 +320,12 @@
             <div class="space-y-3">
                 <div><label class="block text-xs font-bold text-gray-500 mb-1">預設項目</label><div class="grid grid-cols-2 gap-2"><button type="button" onclick="setEditCustCategory('stairs')" id="edit-cat-stairs" class="p-2 rounded border text-sm font-bold bg-orange-100 text-orange-800 border-orange-200">🪜 洗樓梯</button><button type="button" onclick="setEditCustCategory('tank')" id="edit-cat-tank" class="p-2 rounded border text-sm font-bold bg-gray-50 text-gray-400 border-gray-200">💧 洗水塔</button></div><input type="hidden" id="editCustCategory" value="stairs"></div>
                 <div><label class="block text-xs font-bold text-gray-500 mb-1">地址 / 名稱 (必填)</label><input type="text" id="newCustAddr" placeholder="例如：錦州街" class="w-full p-3 bg-gray-50 border rounded-xl outline-none focus:border-green-500 text-lg"></div>
+                
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 mb-1">備註 (例如: 狗很兇)</label>
+                    <input type="text" id="newCustNote" placeholder="備註..." class="w-full p-3 bg-gray-50 border rounded-xl outline-none focus:border-green-500 text-lg">
+                </div>
+
                 <div class="flex gap-2"><div class="flex-1"><label class="block text-xs font-bold text-gray-500 mb-1">金額 (必填)</label><input type="number" id="newCustAmt" placeholder="16000" inputmode="decimal" class="w-full p-3 bg-gray-50 border rounded-xl outline-none focus:border-green-500 font-bold text-emerald-600 text-lg"></div><div class="w-24"><label class="block text-xs font-bold text-gray-500 mb-1">樓層 (可不填)</label><input type="text" id="newCustFloor" placeholder="不固定" class="w-full p-3 bg-gray-50 border rounded-xl outline-none focus:border-green-500 text-center text-lg"></div></div>
                 <div><label class="block text-xs font-bold text-gray-500 mb-1">施作日期 (選填)</label><input type="date" id="newCustServiceDate" class="w-full p-3 bg-gray-50 border rounded-xl outline-none focus:border-green-500 text-lg"></div>
                 <button onclick="saveCustomer()" class="w-full py-3 bg-green-600 text-white rounded-xl font-bold mt-2 shadow text-lg">儲存</button>
