@@ -144,9 +144,7 @@ window.renderManageCustomerList = function() {
     custs.forEach((c) => {
         const catIcon = (c.category || 'stairs') === 'tank' ? '💧' : '🪜';
         const dateTag = c.serviceDate ? `<span class="ml-2 text-[10px] bg-gray-100 px-1 rounded text-gray-500">${c.serviceDate.slice(5)}</span>` : '';
-        // NEW: 在管理列表也顯示備註
         const noteTag = c.note ? `<span class="ml-1 text-[10px] text-orange-500"><i class="fa-solid fa-note-sticky"></i> ${c.note}</span>` : '';
-        
         const div = document.createElement('div');
         div.setAttribute('data-id', c.id);
         div.className = 'flex items-center justify-between p-3 bg-white border border-gray-100 mb-2 rounded-lg shadow-sm';
@@ -205,40 +203,28 @@ window.managerAddCustomer = async function() {
     } catch(e) { window.showToast("新增失敗"); }
 };
 
-// NEW: 儲存客戶 (包含備註)
 window.saveCustomer = async function() {
     if(!currentUser) return;
     const addr = document.getElementById('newCustAddr').value.trim();
     const amt = parseInt(document.getElementById('newCustAmt').value);
     const floor = document.getElementById('newCustFloor').value.trim();
     const sDate = document.getElementById('newCustServiceDate').value;
-    const note = document.getElementById('newCustNote').value.trim(); // 讀取備註
+    const note = document.getElementById('newCustNote').value.trim(); 
     const cat = document.getElementById('editCustCategory').value;
     const id = window.appState.editingCustomerId;
-    
     if(!addr || isNaN(amt)) { alert("請填寫地址和金額"); return; }
-    
     const data = { 
         address: addr, amount: amt, floor: floor, category: cat, 
         collector: window.appState.currentCollector, serviceDate: sDate || '',
-        note: note // 存入備註
+        note: note
     };
-    
     try {
-        if(id) { 
-            await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'customers', id), data); 
-            window.showToast("已更新"); 
-        } else { 
-            data.createdAt = serverTimestamp(); 
-            data.order = Date.now(); 
-            await addDoc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'customers'), data); 
-            window.showToast("已儲存"); 
-        }
+        if(id) { await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'customers', id), data); window.showToast("已更新"); } 
+        else { data.createdAt = serverTimestamp(); data.order = Date.now(); await addDoc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'customers'), data); window.showToast("已儲存"); }
         closeAddCustomerModal(null);
     } catch(e) { window.showToast("儲存失敗"); }
 };
 
-// NEW: 開啟編輯時帶入備註
 window.openEditCustomerModal = function(id, addr, amt, floor, cat, serviceDate, note) {
     window.appState.editingCustomerId = id;
     document.getElementById('customerModalTitle').innerText = '編輯常用客戶';
@@ -246,22 +232,17 @@ window.openEditCustomerModal = function(id, addr, amt, floor, cat, serviceDate, 
     document.getElementById('newCustAmt').value = amt;
     document.getElementById('newCustFloor').value = floor || '';
     document.getElementById('newCustServiceDate').value = serviceDate || '';
-    document.getElementById('newCustNote').value = note || ''; // 帶入備註
+    document.getElementById('newCustNote').value = note || '';
     window.setEditCustCategory(cat || 'stairs');
     document.getElementById('addCustomerModal').classList.remove('hidden');
 };
 
-// NEW: 直接修改備註的函式 (給年報用)
 window.editCustNote = async function(id, currentNote) {
     if(!currentUser) return;
     const newNote = prompt("修改備註：", currentNote);
     if(newNote !== null && newNote !== currentNote) {
-        try {
-            await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'customers', id), { note: newNote });
-            window.showToast("備註已更新");
-        } catch(e) {
-            window.showToast("更新失敗");
-        }
+        try { await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'customers', id), { note: newNote }); window.showToast("備註已更新"); } 
+        catch(e) { window.showToast("更新失敗"); }
     }
 };
 
@@ -446,73 +427,127 @@ window.renderYearlyReport = function() {
     } 
 
     addresses.forEach(addr => { 
-        const monthInfo = Array(13).fill(null); 
         const addrRecords = window.appState.records.filter(r => r.address === addr); 
-        
-        // NEW: 獲取該客戶的備註資料
         const custData = custs.find(c => c.address === addr);
         const custNote = (custData && custData.note) ? custData.note : '';
+        // 判斷是否為水塔客戶 (根據客戶資料或最新一筆紀錄)
+        let isTank = false;
+        if (custData && custData.category === 'tank') isTank = true;
+        else if (addrRecords.length > 0 && addrRecords[0].category === 'tank') isTank = true;
+
+        // 標題與備註 HTML
         const noteHtml = custNote 
-            ? `<span onclick="editCustNote('${custData.id}', '${custNote}')" class="ml-2 text-xs text-orange-500 cursor-pointer hover:bg-orange-50 px-1 rounded"><i class="fa-solid fa-note-sticky"></i> ${custNote}</span>` 
+            ? `<span onclick="editCustNote('${custData ? custData.id : ''}', '${custNote}')" class="ml-2 text-xs text-orange-500 cursor-pointer hover:bg-orange-50 px-1 rounded"><i class="fa-solid fa-note-sticky"></i> ${custNote}</span>` 
             : `<span onclick="editCustNote('${custData ? custData.id : ''}', '')" class="ml-2 text-xs text-gray-300 cursor-pointer hover:text-blue-500"><i class="fa-regular fa-pen-to-square"></i></span>`;
-
-        addrRecords.forEach(r => { 
-            const rCat = r.category || 'stairs';
-            if(catFilter !== 'all' && rCat !== catFilter) return;
-
-            const d = new Date(r.date); 
-            const collectDate = (d instanceof Date && !isNaN(d)) ? `${d.getMonth()+1}/${d.getDate()}` : '??'; 
-            
-            if (r.months && r.months.includes(`${year}年`)) { 
-                const parts = r.months.match(new RegExp(`${year}年\\s*([0-9,]+)`)); 
-                if(parts && parts[1]) { 
-                    const paidMonths = parts[1].split(',').map(Number); 
-                    paidMonths.forEach(m => { 
-                        if(m >= 1 && m <= 12) { 
-                            let status = 'paid'; 
-                            if(r.status === 'no_payment') status = 'no_payment'; 
-                            else if(r.status === 'no_receipt') status = 'no_receipt';
-                            monthInfo[m] = { 
-                                status: status, date: collectDate, id: r.id, 
-                                amount: r.amount, fullDate: r.date, 
-                                type: r.type || 'cash', floor: r.floor || '',
-                                note: r.note || '' 
-                            }; 
-                        } 
-                    }); 
-                } 
-            } 
-        }); 
-
+        
         const card = document.createElement('div'); 
         card.className = 'bg-white p-3 rounded-lg border border-gray-100 shadow-sm mb-3'; 
         
-        let monthHtml = ''; 
-        for(let m=1; m<=12; m++) { 
-            const info = monthInfo[m]; 
-            let boxClass = 'border border-gray-100 bg-gray-50 rounded p-2 flex flex-col justify-between min-h-[70px] relative transition-all active:scale-95';
-            let content = `<span class="text-xs text-gray-300 font-bold absolute top-1 right-2">${m}月</span>`; 
-            let onclick = `openReportAction('add', '${addr}', ${year}, ${m})`; 
+        // NEW: 如果是水塔，顯示「清單模式」
+        if (isTank) {
+            let listHtml = '<div class="space-y-2">';
+            // 篩選今年的紀錄
+            const yearRecords = addrRecords.filter(r => r.date.startsWith(String(year))); // 簡單過濾年份
+            yearRecords.sort((a, b) => b.date.localeCompare(a.date)); // 新到舊
 
-            if(info) { 
-                const safeNote = (info.note || '').replace(/'/g, "\\'");
-                onclick = `openReportAction('edit', '${addr}', ${year}, ${m}, '${info.id}', '${info.fullDate}', ${info.amount}, '${info.type}', '${info.floor}', '${safeNote}', '${info.status}')`; 
-                
-                let typeText = '💵 現金'; let typeBg = 'bg-emerald-50 text-emerald-700';
-                if(info.type === 'transfer') { typeText = '🏦 匯款'; typeBg = 'bg-blue-50 text-blue-700'; }
-                if(info.type === 'linepay') { typeText = '🟢 LP'; typeBg = 'bg-lime-50 text-lime-700'; }
-                if(info.type === 'dad') { typeText = '👴 匯爸'; typeBg = 'bg-purple-50 text-purple-700'; }
-                let borderClass = 'border-emerald-200 bg-white';
-                if(info.status === 'no_receipt') borderClass = 'border-red-300 bg-red-50'; 
-                if(info.status === 'no_payment') borderClass = 'border-orange-300 bg-orange-50'; 
-                let noteIcon = info.note ? `<i class="fa-solid fa-note-sticky text-yellow-500 text-[10px] ml-1"></i>` : '';
+            if (yearRecords.length === 0) {
+                listHtml += '<div class="text-xs text-gray-400 text-center py-2 bg-gray-50 rounded">本年度尚無紀錄</div>';
+            } else {
+                yearRecords.forEach(r => {
+                    const d = new Date(r.date);
+                    const dateStr = `${d.getMonth()+1}/${d.getDate()}`;
+                    let sDateStr = '';
+                    if(r.serviceDate) {
+                        const sd = new Date(r.serviceDate);
+                        sDateStr = `<span class="bg-cyan-50 text-cyan-600 px-1 rounded ml-1">🚿 ${sd.getMonth()+1}/${sd.getDate()}</span>`;
+                    }
+                    let statusHtml = '';
+                    if(r.status === 'no_receipt') statusHtml = `<span class="text-red-500 text-xs ml-2"><i class="fa-solid fa-triangle-exclamation"></i> 欠單</span>`;
+                    else if(r.status === 'no_payment') statusHtml = `<span class="text-orange-500 text-xs ml-2"><i class="fa-solid fa-hourglass-half"></i> 欠款</span>`;
+                    
+                    const safeNote = (r.note || '').replace(/'/g, "\\'");
+                    const onclick = `openReportAction('edit', '${addr}', ${year}, ${d.getMonth()+1}, '${r.id}', '${r.date}', ${r.amount}, '${r.type}', '${r.floor || ''}', '${safeNote}', '${r.status}')`;
 
-                boxClass = `border ${borderClass} rounded p-2 flex flex-col justify-between min-h-[70px] relative shadow-sm cursor-pointer active:scale-95`;
-                content = `<div class="flex justify-between items-start mb-1"><span class="text-xs font-bold text-gray-400 flex items-center">${m}月${noteIcon}</span><span class="text-[10px] px-1 rounded ${typeBg}">${typeText}</span></div><div class="flex justify-between items-end"><div><div class="text-[10px] text-gray-500">${info.date}收</div><div class="text-xs font-bold text-gray-700">${info.floor ? info.floor : ''}</div></div><div class="font-bold text-emerald-600 text-sm">$${info.amount}</div></div>`;
+                    listHtml += `
+                        <div onclick="${onclick}" class="flex justify-between items-center p-2 border-b border-gray-100 active:bg-gray-50 cursor-pointer">
+                            <div>
+                                <div class="text-sm font-bold text-gray-700">📅 ${dateStr} ${sDateStr} ${statusHtml}</div>
+                                <div class="text-xs text-gray-400 mt-0.5">${r.floor ? r.floor+'樓' : ''} ${r.note ? '('+r.note+')' : ''}</div>
+                            </div>
+                            <div class="font-bold text-emerald-600">$${r.amount}</div>
+                        </div>`;
+                });
+            }
+            listHtml += '</div>';
+            
+            // 水塔卡片標題 (加入補登按鈕)
+            const addBtn = `<button onclick="openReportAction('add', '${addr}', ${year}, ${new Date().getMonth()+1})" class="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded hover:bg-blue-100"><i class="fa-solid fa-plus"></i></button>`;
+            
+            card.innerHTML = ` 
+                <div class="font-bold text-cyan-700 mb-2 border-b border-cyan-100 pb-2 text-sm flex justify-between items-center"> 
+                    <div><span>💧 ${addr}</span> ${noteHtml}</div> 
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs text-gray-300 font-normal">#${year}</span>
+                        ${addBtn}
+                    </div>
+                </div> 
+                ${listHtml} 
+            `;
+
+        } else {
+            // 原本的「洗樓梯」12宮格模式
+            const monthInfo = Array(13).fill(null); 
+            addrRecords.forEach(r => { 
+                const d = new Date(r.date); 
+                const collectDate = (d instanceof Date && !isNaN(d)) ? `${d.getMonth()+1}/${d.getDate()}` : '??'; 
+                if (r.months && r.months.includes(`${year}年`)) { 
+                    const parts = r.months.match(new RegExp(`${year}年\\s*([0-9,]+)`)); 
+                    if(parts && parts[1]) { 
+                        const paidMonths = parts[1].split(',').map(Number); 
+                        paidMonths.forEach(m => { 
+                            if(m >= 1 && m <= 12) { 
+                                let status = 'paid'; 
+                                if(r.status === 'no_payment') status = 'no_payment'; 
+                                else if(r.status === 'no_receipt') status = 'no_receipt';
+                                monthInfo[m] = { 
+                                    status: status, date: collectDate, id: r.id, 
+                                    amount: r.amount, fullDate: r.date, 
+                                    type: r.type || 'cash', floor: r.floor || '',
+                                    note: r.note || '' 
+                                }; 
+                            } 
+                        }); 
+                    } 
+                } 
+            }); 
+
+            let monthHtml = ''; 
+            for(let m=1; m<=12; m++) { 
+                const info = monthInfo[m]; 
+                let boxClass = 'border border-gray-100 bg-gray-50 rounded p-2 flex flex-col justify-between min-h-[70px] relative transition-all active:scale-95';
+                let content = `<span class="text-xs text-gray-300 font-bold absolute top-1 right-2">${m}月</span>`; 
+                let onclick = `openReportAction('add', '${addr}', ${year}, ${m})`; 
+
+                if(info) { 
+                    const safeNote = (info.note || '').replace(/'/g, "\\'");
+                    onclick = `openReportAction('edit', '${addr}', ${year}, ${m}, '${info.id}', '${info.fullDate}', ${info.amount}, '${info.type}', '${info.floor}', '${safeNote}', '${info.status}')`; 
+                    
+                    let typeText = '💵 現金'; let typeBg = 'bg-emerald-50 text-emerald-700';
+                    if(info.type === 'transfer') { typeText = '🏦 匯款'; typeBg = 'bg-blue-50 text-blue-700'; }
+                    if(info.type === 'linepay') { typeText = '🟢 LP'; typeBg = 'bg-lime-50 text-lime-700'; }
+                    if(info.type === 'dad') { typeText = '👴 匯爸'; typeBg = 'bg-purple-50 text-purple-700'; }
+                    let borderClass = 'border-emerald-200 bg-white';
+                    if(info.status === 'no_receipt') borderClass = 'border-red-300 bg-red-50'; 
+                    if(info.status === 'no_payment') borderClass = 'border-orange-300 bg-orange-50'; 
+                    let noteIcon = info.note ? `<i class="fa-solid fa-note-sticky text-yellow-500 text-[10px] ml-1"></i>` : '';
+
+                    boxClass = `border ${borderClass} rounded p-2 flex flex-col justify-between min-h-[70px] relative shadow-sm cursor-pointer active:scale-95`;
+                    content = `<div class="flex justify-between items-start mb-1"><span class="text-xs font-bold text-gray-400 flex items-center">${m}月${noteIcon}</span><span class="text-[10px] px-1 rounded ${typeBg}">${typeText}</span></div><div class="flex justify-between items-end"><div><div class="text-[10px] text-gray-500">${info.date}收</div><div class="text-xs font-bold text-gray-700">${info.floor ? info.floor : ''}</div></div><div class="font-bold text-emerald-600 text-sm">$${info.amount}</div></div>`;
+                } 
+                monthHtml += `<div class="${boxClass}" onclick="${onclick}">${content}</div>`; 
             } 
-            monthHtml += `<div class="${boxClass}" onclick="${onclick}">${content}</div>`; 
-        } 
-        card.innerHTML = ` <div class="font-bold text-gray-700 mb-2 border-b pb-1 text-sm flex justify-between items-center"> <div><span>${addr}</span> ${noteHtml}</div> <span class="text-xs text-gray-300 font-normal">#${year}</span> </div> <div class="grid grid-cols-2 sm:grid-cols-3 gap-2"> ${monthHtml} </div> `; 
+            card.innerHTML = ` <div class="font-bold text-gray-700 mb-2 border-b pb-1 text-sm flex justify-between items-center"> <div><span>${addr}</span> ${noteHtml}</div> <span class="text-xs text-gray-300 font-normal">#${year}</span> </div> <div class="grid grid-cols-2 sm:grid-cols-3 gap-2"> ${monthHtml} </div> `; 
+        } // end else
         container.appendChild(card); 
     }); 
 };
@@ -538,7 +573,7 @@ window.openReportAction = function(mode, address, year, month, recordId, date, a
     };
 
     if(mode === 'edit') {
-        title.innerText = `編輯紀錄：${address} (${month}月)`; 
+        title.innerText = `編輯紀錄：${address}`; 
         content.innerHTML = ` 
             <div class="grid grid-cols-2 gap-2 mb-2"><div><label class="block text-xs text-gray-500 mb-1">收款日期</label><input type="date" id="reportEditDate" value="${date}" class="w-full p-2 border rounded"></div>${getFloorInput('reportEditFloor', floor)}</div>
             <div class="grid grid-cols-2 gap-2 mb-2"><div><label class="block text-xs text-gray-500 mb-1">金額</label><input type="number" id="reportEditAmount" value="${amount}" class="w-full p-2 border rounded"></div>${getTypeSelect('reportEditType', type)}</div>
@@ -552,7 +587,8 @@ window.openReportAction = function(mode, address, year, month, recordId, date, a
         const today = new Date().toISOString().split('T')[0]; 
         
         window.appState.reportBatchMonths.clear();
-        window.appState.reportBatchMonths.add(month); 
+        // 水塔模式不需要預選月份，但為了邏輯兼容，保留
+        if(month > 0) window.appState.reportBatchMonths.add(month); 
 
         title.innerText = `補登紀錄：${address}`; 
         
@@ -564,16 +600,16 @@ window.openReportAction = function(mode, address, year, month, recordId, date, a
         monthSelectorHtml += '</div>';
 
         content.innerHTML = `
-            <div class="text-xs text-gray-400 mb-1">選擇月份 (可多選)</div>
+            <div class="text-xs text-gray-400 mb-1">選擇月份 (洗樓梯用，水塔可忽略)</div>
             ${monthSelectorHtml}
             <div class="grid grid-cols-2 gap-2 mb-2">
                 <div><label class="block text-xs text-gray-500 mb-1">收款日期</label><input type="date" id="reportAddDate" value="${today}" class="w-full p-2 border rounded"></div>
                 ${getFloorInput('reportAddFloor', defFloor)}
             </div>
-            <div class="grid grid-cols-2 gap-2 mb-2"><div><label class="block text-xs text-gray-500 mb-1">金額 (單月)</label><input type="number" id="reportAddAmount" value="${defAmount}" placeholder="輸入金額" class="w-full p-2 border rounded"></div>${getTypeSelect('reportAddType', 'cash')}</div>
+            <div class="grid grid-cols-2 gap-2 mb-2"><div><label class="block text-xs text-gray-500 mb-1">金額</label><input type="number" id="reportAddAmount" value="${defAmount}" placeholder="輸入金額" class="w-full p-2 border rounded"></div>${getTypeSelect('reportAddType', 'cash')}</div>
             ${getStatusButtons('completed')}
             ${getNoteInput('reportAddNote', '')}
-            <button onclick="batchAddReportRecords('${address}', ${year}, document.getElementById('reportAddAmount').value, document.getElementById('reportAddType').value, document.getElementById('reportAddFloor').value, document.getElementById('reportAddNote').value, document.getElementById('reportEditStatus').value)" class="w-full py-3 bg-emerald-500 text-white rounded-lg font-bold mt-4">確認補登 (<span id="batchCount">1</span>筆)</button>`; 
+            <button onclick="batchAddReportRecords('${address}', ${year}, document.getElementById('reportAddAmount').value, document.getElementById('reportAddType').value, document.getElementById('reportAddFloor').value, document.getElementById('reportAddNote').value, document.getElementById('reportEditStatus').value)" class="w-full py-3 bg-emerald-500 text-white rounded-lg font-bold mt-4">確認補登</button>`; 
     } 
     document.getElementById('reportActionModal').classList.remove('hidden'); 
 };
@@ -606,32 +642,55 @@ window.toggleBatchMonth = function(btn, m) {
         window.appState.reportBatchMonths.add(m);
         btn.className = 'p-2 rounded border border-blue-600 text-sm font-bold bg-blue-500 text-white';
     }
-    document.getElementById('batchCount').innerText = window.appState.reportBatchMonths.size;
+    // document.getElementById('batchCount').innerText = window.appState.reportBatchMonths.size;
 };
 
 window.batchAddReportRecords = async function(address, year, amount, type, floor, note, status) { 
     if(!currentUser) return; 
-    if(window.appState.reportBatchMonths.size === 0) { alert("請至少選擇一個月份"); return; }
+    // if(window.appState.reportBatchMonths.size === 0) { alert("請至少選擇一個月份"); return; }
+    // 水塔模式允許不選月份
     const dateInput = document.getElementById('reportAddDate').value;
     const batch = writeBatch(db);
-    window.appState.reportBatchMonths.forEach(m => {
+    
+    // 如果有選月份，就依照月份建立；如果沒選（水塔模式），就只建立一筆
+    if (window.appState.reportBatchMonths.size > 0) {
+        window.appState.reportBatchMonths.forEach(m => {
+            const ref = doc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'records'));
+            const record = { 
+                date: dateInput, address: address, amount: parseInt(amount), floor: floor || '', 
+                months: `${year}年 ${m}月`, note: note || '', 
+                type: type || 'cash', 
+                category: window.appState.reportCategory === 'all' ? 'stairs' : window.appState.reportCategory, 
+                collector: window.appState.currentCollector, 
+                status: status || 'completed', 
+                createdAt: serverTimestamp() 
+            }; 
+            if(window.appState.reportCategory === 'all') {
+                 const cust = window.appState.customers.find(c => c.address === address);
+                 if(cust && cust.category) record.category = cust.category;
+            }
+            batch.set(ref, record);
+        });
+    } else {
+        // 單筆建立 (水塔或補登)
         const ref = doc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'records'));
         const record = { 
             date: dateInput, address: address, amount: parseInt(amount), floor: floor || '', 
-            months: `${year}年 ${m}月`, note: note || '', 
+            months: '', note: note || '', 
             type: type || 'cash', 
             category: window.appState.reportCategory === 'all' ? 'stairs' : window.appState.reportCategory, 
             collector: window.appState.currentCollector, 
             status: status || 'completed', 
             createdAt: serverTimestamp() 
         }; 
-        if(window.appState.reportCategory === 'all') {
-             const cust = window.appState.customers.find(c => c.address === address);
-             if(cust && cust.category) record.category = cust.category;
-        }
+        // 嘗試補上分類
+        const cust = window.appState.customers.find(c => c.address === address);
+        if(cust && cust.category) record.category = cust.category;
+        
         batch.set(ref, record);
-    });
-    try { await batch.commit(); window.closeReportActionModal(null); window.showToast(`✅ 已補登 ${window.appState.reportBatchMonths.size} 筆`); } catch(e) { console.error(e); window.showToast("補登失敗"); } 
+    }
+
+    try { await batch.commit(); window.closeReportActionModal(null); window.showToast(`✅ 已補登`); } catch(e) { console.error(e); window.showToast("補登失敗"); } 
 };
 
 window.closeReportActionModal = function(e) { if(e && e.target !== e.currentTarget) return; document.getElementById('reportActionModal').classList.add('hidden'); };
@@ -764,7 +823,7 @@ window.selectCustomer = function(addr, floor, amount, category) { document.getEl
 window.updateAddressSuggestions = function(customers) {
     const dataList = document.getElementById('addressSuggestions');
     if(!dataList) return;
-    dataList.innerHTML = ''; 
+    dataList.innerHTML = ''; // 清空舊的
     const uniqueAddresses = new Set(customers.map(c => c.address));
     uniqueAddresses.forEach(addr => {
         const option = document.createElement('option');
