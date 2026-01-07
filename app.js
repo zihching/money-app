@@ -22,8 +22,8 @@ window.appState = {
     currentView: 'entry',
     reportBatchMonths: new Set(),
     tempModalSet: new Set(),
-    deleteTargetId: null, // NEW: 刪除目標ID
-    deleteType: null      // NEW: 刪除類型 (single 或 all)
+    deleteTargetId: null,
+    deleteType: null
 };
 
 // --- 2. Firebase 設定 ---
@@ -144,13 +144,21 @@ window.renderManageCustomerList = function() {
     custs.forEach((c) => {
         const catIcon = (c.category || 'stairs') === 'tank' ? '💧' : '🪜';
         const dateTag = c.serviceDate ? `<span class="ml-2 text-[10px] bg-gray-100 px-1 rounded text-gray-500">${c.serviceDate.slice(5)}</span>` : '';
+        // NEW: 在管理列表也顯示備註
+        const noteTag = c.note ? `<span class="ml-1 text-[10px] text-orange-500"><i class="fa-solid fa-note-sticky"></i> ${c.note}</span>` : '';
+        
         const div = document.createElement('div');
         div.setAttribute('data-id', c.id);
         div.className = 'flex items-center justify-between p-3 bg-white border border-gray-100 mb-2 rounded-lg shadow-sm';
         div.innerHTML = `
             <div class="flex items-center gap-3 overflow-hidden">
                 <div class="handle cursor-move p-2 touch-none"><i class="fa-solid fa-bars text-gray-400 text-lg"></i></div>
-                <div class="flex-1"><div class="font-bold text-gray-800 text-sm truncate flex items-center">${catIcon} ${c.address} ${dateTag}</div><div class="text-xs text-gray-400">$${c.amount}</div></div>
+                <div class="flex-1">
+                    <div class="font-bold text-gray-800 text-sm truncate flex items-center flex-wrap">
+                        ${catIcon} ${c.address} ${dateTag} ${noteTag}
+                    </div>
+                    <div class="text-xs text-gray-400">$${c.amount}</div>
+                </div>
             </div>
             <button onclick="deleteCustomerInManager('${c.id}')" class="ignore-drag text-gray-300 hover:text-red-500 p-2 z-10"><i class="fa-solid fa-trash-can pointer-events-none"></i></button>
         `;
@@ -186,7 +194,7 @@ window.managerAddCustomer = async function() {
     window.appState.customers.forEach(c => { if(c.order && c.order > maxOrder) maxOrder = c.order; });
     const data = {
         address: addr, amount: amt, category: cat, collector: window.appState.currentCollector,
-        createdAt: serverTimestamp(), order: maxOrder + 1, serviceDate: sDate || ''
+        createdAt: serverTimestamp(), order: maxOrder + 1, serviceDate: sDate || '', note: ''
     };
     try {
         await addDoc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'customers'), data);
@@ -197,32 +205,64 @@ window.managerAddCustomer = async function() {
     } catch(e) { window.showToast("新增失敗"); }
 };
 
+// NEW: 儲存客戶 (包含備註)
 window.saveCustomer = async function() {
     if(!currentUser) return;
     const addr = document.getElementById('newCustAddr').value.trim();
     const amt = parseInt(document.getElementById('newCustAmt').value);
     const floor = document.getElementById('newCustFloor').value.trim();
     const sDate = document.getElementById('newCustServiceDate').value;
+    const note = document.getElementById('newCustNote').value.trim(); // 讀取備註
     const cat = document.getElementById('editCustCategory').value;
     const id = window.appState.editingCustomerId;
+    
     if(!addr || isNaN(amt)) { alert("請填寫地址和金額"); return; }
-    const data = { address: addr, amount: amt, floor: floor, category: cat, collector: window.appState.currentCollector, serviceDate: sDate || '' };
+    
+    const data = { 
+        address: addr, amount: amt, floor: floor, category: cat, 
+        collector: window.appState.currentCollector, serviceDate: sDate || '',
+        note: note // 存入備註
+    };
+    
     try {
-        if(id) { await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'customers', id), data); window.showToast("已更新"); } 
-        else { data.createdAt = serverTimestamp(); data.order = Date.now(); await addDoc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'customers'), data); window.showToast("已儲存"); }
+        if(id) { 
+            await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'customers', id), data); 
+            window.showToast("已更新"); 
+        } else { 
+            data.createdAt = serverTimestamp(); 
+            data.order = Date.now(); 
+            await addDoc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'customers'), data); 
+            window.showToast("已儲存"); 
+        }
         closeAddCustomerModal(null);
     } catch(e) { window.showToast("儲存失敗"); }
 };
 
-window.openEditCustomerModal = function(id, addr, amt, floor, cat, serviceDate) {
+// NEW: 開啟編輯時帶入備註
+window.openEditCustomerModal = function(id, addr, amt, floor, cat, serviceDate, note) {
     window.appState.editingCustomerId = id;
     document.getElementById('customerModalTitle').innerText = '編輯常用客戶';
     document.getElementById('newCustAddr').value = addr;
     document.getElementById('newCustAmt').value = amt;
     document.getElementById('newCustFloor').value = floor || '';
     document.getElementById('newCustServiceDate').value = serviceDate || '';
+    document.getElementById('newCustNote').value = note || ''; // 帶入備註
     window.setEditCustCategory(cat || 'stairs');
     document.getElementById('addCustomerModal').classList.remove('hidden');
+};
+
+// NEW: 直接修改備註的函式 (給年報用)
+window.editCustNote = async function(id, currentNote) {
+    if(!currentUser) return;
+    const newNote = prompt("修改備註：", currentNote);
+    if(newNote !== null && newNote !== currentNote) {
+        try {
+            await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'customers', id), { note: newNote });
+            window.showToast("備註已更新");
+        } catch(e) {
+            window.showToast("更新失敗");
+        }
+    }
 };
 
 // --- Window Functions (UI Logic) ---
@@ -303,22 +343,13 @@ window.updateRecordStatus = async function(docId, newStatus) {
      try { await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'records', docId), { status: newStatus }); window.showToast("狀態已更新"); } catch(e) { window.showToast("更新失敗"); }
 };
 
-// --- NEW: 待收地址修改函式 ---
 window.updatePendingAddress = async function(docId, newAddress) {
     if(!currentUser || !newAddress) return;
-    try {
-        await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'pending', docId), { address: newAddress });
-        // 不需 toast，自動儲存
-    } catch(e) { console.error(e); window.showToast("更新地址失敗"); }
+    try { await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'pending', docId), { address: newAddress }); } catch(e) { console.error(e); window.showToast("更新地址失敗"); }
 };
 
-// --- NEW: 刪除確認相關函式 ---
-window.deletePending = function(docId) {
-    window.openDeleteModal('single', docId);
-};
-
+window.deletePending = function(docId) { window.openDeleteModal('single', docId); };
 window.confirmClearAllPending = function() {
-    // 檢查是否有資料
     const count = document.getElementById('pendingCount').innerText;
     if (count === '0') { window.showToast("清單已經是空的了"); return; }
     window.openDeleteModal('all', null);
@@ -329,61 +360,15 @@ window.openDeleteModal = function(type, id) {
     window.appState.deleteTargetId = id;
     const textEl = document.getElementById('deleteConfirmText');
     const btn = document.getElementById('confirmDeleteBtn');
-    
-    if (type === 'all') {
-        textEl.innerText = "這將清空「所有」待收項目，無法復原。";
-        btn.innerText = "全部清空";
-        btn.onclick = window.doClearAllPending;
-    } else {
-        textEl.innerText = "確定移除此待收項目？";
-        btn.innerText = "確定刪除";
-        btn.onclick = () => window.doDeletePending(window.appState.deleteTargetId);
-    }
-    
+    if (type === 'all') { textEl.innerText = "這將清空「所有」待收項目，無法復原。"; btn.innerText = "全部清空"; btn.onclick = window.doClearAllPending; } 
+    else { textEl.innerText = "確定移除此待收項目？"; btn.innerText = "確定刪除"; btn.onclick = () => window.doDeletePending(window.appState.deleteTargetId); }
     document.getElementById('deleteConfirmModal').classList.remove('hidden');
 };
 
-window.closeDeleteModal = function(e) {
-    if(e && e.target !== e.currentTarget) return;
-    document.getElementById('deleteConfirmModal').classList.add('hidden');
-};
-
-window.doDeletePending = async function(docId) {
-    if(!currentUser) return;
-    await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'pending', docId));
-    window.closeDeleteModal(null);
-    window.showToast("🗑️ 已刪除");
-};
-
-window.doClearAllPending = async function() {
-    if(!currentUser) return;
-    const current = window.appState.currentCollector;
-    // 只刪除當前收費員的清單
-    const items = window.appState.pending.filter(i => (i.collector === current) || (!i.collector && current === '子晴') );
-    
-    const batch = writeBatch(db);
-    items.forEach(item => {
-        const ref = doc(db, 'artifacts', APP_ID, 'public', 'data', 'pending', item.id);
-        batch.delete(ref);
-    });
-    
-    try {
-        await batch.commit();
-        window.closeDeleteModal(null);
-        window.showToast("🗑️ 清單已清空");
-    } catch(e) {
-        console.error(e);
-        window.showToast("清空失敗");
-    }
-};
-
-window.deleteCustomer = async function(docId) {
-    if(!currentUser) return;
-    if(confirm("確定從常用名單移除？(不會刪除歷史記帳紀錄)")) {
-        await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'customers', docId));
-        window.showToast("🗑️ 已刪除");
-    }
-};
+window.closeDeleteModal = function(e) { if(e && e.target !== e.currentTarget) return; document.getElementById('deleteConfirmModal').classList.add('hidden'); };
+window.doDeletePending = async function(docId) { if(!currentUser) return; await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'pending', docId)); window.closeDeleteModal(null); window.showToast("🗑️ 已刪除"); };
+window.doClearAllPending = async function() { if(!currentUser) return; const current = window.appState.currentCollector; const items = window.appState.pending.filter(i => (i.collector === current) || (!i.collector && current === '子晴') ); const batch = writeBatch(db); items.forEach(item => { const ref = doc(db, 'artifacts', APP_ID, 'public', 'data', 'pending', item.id); batch.delete(ref); }); try { await batch.commit(); window.closeDeleteModal(null); window.showToast("🗑️ 清單已清空"); } catch(e) { console.error(e); window.showToast("清空失敗"); } };
+window.deleteCustomer = async function(docId) { if(!currentUser) return; if(confirm("確定從常用名單移除？(不會刪除歷史記帳紀錄)")) { await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'customers', docId)); window.showToast("🗑️ 已刪除"); } };
 // --- 6. 表單與其他輔助功能 ---
 
 function getFormData() {
@@ -464,6 +449,13 @@ window.renderYearlyReport = function() {
         const monthInfo = Array(13).fill(null); 
         const addrRecords = window.appState.records.filter(r => r.address === addr); 
         
+        // NEW: 獲取該客戶的備註資料
+        const custData = custs.find(c => c.address === addr);
+        const custNote = (custData && custData.note) ? custData.note : '';
+        const noteHtml = custNote 
+            ? `<span onclick="editCustNote('${custData.id}', '${custNote}')" class="ml-2 text-xs text-orange-500 cursor-pointer hover:bg-orange-50 px-1 rounded"><i class="fa-solid fa-note-sticky"></i> ${custNote}</span>` 
+            : `<span onclick="editCustNote('${custData ? custData.id : ''}', '')" class="ml-2 text-xs text-gray-300 cursor-pointer hover:text-blue-500"><i class="fa-regular fa-pen-to-square"></i></span>`;
+
         addrRecords.forEach(r => { 
             const rCat = r.category || 'stairs';
             if(catFilter !== 'all' && rCat !== catFilter) return;
@@ -520,7 +512,7 @@ window.renderYearlyReport = function() {
             } 
             monthHtml += `<div class="${boxClass}" onclick="${onclick}">${content}</div>`; 
         } 
-        card.innerHTML = ` <div class="font-bold text-gray-700 mb-2 border-b pb-1 text-sm flex justify-between"> <span>${addr}</span> <span class="text-xs text-gray-300 font-normal">#${year}</span> </div> <div class="grid grid-cols-2 sm:grid-cols-3 gap-2"> ${monthHtml} </div> `; 
+        card.innerHTML = ` <div class="font-bold text-gray-700 mb-2 border-b pb-1 text-sm flex justify-between items-center"> <div><span>${addr}</span> ${noteHtml}</div> <span class="text-xs text-gray-300 font-normal">#${year}</span> </div> <div class="grid grid-cols-2 sm:grid-cols-3 gap-2"> ${monthHtml} </div> `; 
         container.appendChild(card); 
     }); 
 };
@@ -661,30 +653,19 @@ window.renderPendingList = function() {
     const list = document.getElementById('pendingList'); 
     const container = document.getElementById('pendingContainer'); 
     const current = window.appState.currentCollector; 
-    
-    // 1. 抓出屬於當前收費員的
     const allItems = window.appState.pending.filter(i => (i.collector === current) || (!i.collector && current === '子晴') );
-    
     if (allItems.length === 0) { container.classList.add('hidden'); return; } 
     container.classList.remove('hidden'); 
     document.getElementById('pendingCount').innerText = allItems.length; 
     list.innerHTML = ''; 
-
-    // 2. 分區：有時間 vs 沒時間
     const appointments = allItems.filter(i => i.appointmentTime);
     const normals = allItems.filter(i => !i.appointmentTime);
-
-    // 3. 排序
     appointments.sort((a, b) => a.appointmentTime.localeCompare(b.appointmentTime));
     normals.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-
-    // 4. 渲染預約區
     if (appointments.length > 0) {
         list.innerHTML += `<div class="font-bold text-red-500 mb-2 mt-1 px-1 flex items-center gap-2"><i class="fa-solid fa-calendar-check"></i> 預約 / 急件 (${appointments.length})</div>`;
         appointments.forEach(item => { list.appendChild(createPendingItem(item, true)); });
     }
-
-    // 5. 渲染一般區
     if (normals.length > 0) {
         if (appointments.length > 0) {
             list.innerHTML += `<div class="font-bold text-gray-500 mb-2 mt-4 px-1 flex items-center gap-2 border-t pt-3"><i class="fa-solid fa-route"></i> 一般路線 (${normals.length})</div>`;
@@ -693,7 +674,6 @@ window.renderPendingList = function() {
     }
 };
 
-// NEW: 產生待收卡片 (包含解決重疊與編輯地址)
 function createPendingItem(item, isAppointment) {
     const floorId = `p-floor-${item.id}`; 
     const monthsId = `p-months-${item.id}`; 
@@ -702,7 +682,6 @@ function createPendingItem(item, isAppointment) {
     const catIcon = item.category === 'tank' ? '<span class="text-cyan-600">💧</span>' : '<span class="text-orange-600">🪜</span>'; 
     let sTag = ''; 
     if(item.serviceDate) { sTag = `<span class="text-xs bg-cyan-100 text-cyan-700 px-1 rounded ml-1 font-bold">洗:${item.serviceDate.slice(5)}</span>`; } 
-    
     let timeTag = '';
     let bgClass = 'bg-white';
     if (item.appointmentTime) {
@@ -711,10 +690,8 @@ function createPendingItem(item, isAppointment) {
         const timeStr = `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
         timeTag = `<div class="bg-red-100 text-red-600 px-2 py-1 rounded text-xs font-bold flex items-center gap-1 mb-2 w-fit shadow-sm"><i class="fa-solid fa-clock"></i> ${timeStr}</div>`;
     }
-
     const div = document.createElement('div'); 
     div.className = `${bgClass} p-3 rounded-xl border shadow-sm relative mb-2`; 
-    // NEW: 在標題列加入 pr-8 (padding-right: 2rem) 避免文字與右上角 X 重疊
     div.innerHTML = ` 
         ${timeTag}
         <div class="flex justify-between items-start mb-2 pr-8"> 
@@ -787,7 +764,7 @@ window.selectCustomer = function(addr, floor, amount, category) { document.getEl
 window.updateAddressSuggestions = function(customers) {
     const dataList = document.getElementById('addressSuggestions');
     if(!dataList) return;
-    dataList.innerHTML = ''; // 清空舊的
+    dataList.innerHTML = ''; 
     const uniqueAddresses = new Set(customers.map(c => c.address));
     uniqueAddresses.forEach(addr => {
         const option = document.createElement('option');
@@ -862,6 +839,28 @@ window.changeSettleMonth = function(delta) {
     picker.value = `${newY}-${newM}`;
     window.updateSummary();
 };
+
+// NEW: 結算邏輯升級 - 支援多筆支出
+window.addExpenseRow = function(name='', amt='') {
+    const div = document.createElement('div');
+    div.className = 'flex gap-2 items-center expense-row';
+    div.innerHTML = `
+        <input type="text" value="${name}" placeholder="項目" class="exp-name w-1/2 p-2 border rounded text-sm bg-white" oninput="window.saveExpenses(); window.updateSummary();">
+        <input type="number" value="${amt}" placeholder="$" class="exp-amt flex-1 p-2 border rounded text-sm font-bold text-gray-700 bg-white" oninput="window.saveExpenses(); window.updateSummary();">
+        <button onclick="this.parentElement.remove(); window.saveExpenses(); window.updateSummary();" class="text-red-400 p-2 hover:bg-red-50 rounded"><i class="fa-solid fa-minus"></i></button>
+    `;
+    document.getElementById('expenseList').appendChild(div);
+};
+
+window.saveExpenses = function() {
+    const rows = document.querySelectorAll('.expense-row');
+    const data = Array.from(rows).map(row => ({
+        name: row.querySelector('.exp-name').value,
+        amount: row.querySelector('.exp-amt').value
+    }));
+    localStorage.setItem('cleaning_app_expenses_v2', JSON.stringify(data));
+};
+
 window.updateSummary = function() { 
     let totalCashAll = 0, totalTransferAll = 0, totalLinePayAll = 0, totalDadAll = 0; 
     let totalCashMe = 0, totalTransferMe = 0, totalLinePayMe = 0, totalDadMe = 0; 
@@ -907,12 +906,17 @@ window.updateSummary = function() {
     document.getElementById('settleLinePay').innerText = fmt(totalLinePayMe); 
     document.getElementById('settleDad').innerText = fmt(totalDadMe); 
     document.getElementById('settleTotal').innerText = fmt(grandTotalMe); 
-    const salary = parseInt(document.getElementById('mySalary').value) || 0; 
-    const finalToDad = userHolding - salary; 
+    
+    // NEW: 計算總扣除額
+    let totalDeduction = 0;
+    document.querySelectorAll('.exp-amt').forEach(input => totalDeduction += (parseInt(input.value) || 0));
+    document.getElementById('totalExpensesDisplay').innerText = fmt(totalDeduction);
+
+    const finalToDad = userHolding - totalDeduction; 
     document.getElementById('finalToDad').innerText = fmt(finalToDad); 
+    
     document.getElementById('categoryBreakdown').innerHTML = ` <div class="bg-white p-3 rounded-lg border border-orange-200 text-center"> <div class="text-xs text-orange-600 font-bold mb-1">🪜 洗樓梯 (全部)</div> <div class="text-xl font-bold text-gray-800">${fmt(catStats.stairs)}</div> </div> <div class="bg-white p-3 rounded-lg border border-cyan-200 text-center"> <div class="text-xs text-cyan-600 font-bold mb-1">💧 洗水塔 (全部)</div> <div class="text-xl font-bold text-gray-800">${fmt(catStats.tank)}</div> </div> `; 
     
-    // NEW: 警告框加上點擊事件
     const warningContainer = document.getElementById('settleWarnings'); 
     warningContainer.innerHTML = ''; 
     if (pendingReceiptCount > 0 || pendingPaymentCount > 0) { 
@@ -935,7 +939,7 @@ window.addTag = function(text) { const el = document.getElementById('inputNote')
 window.showToast = function(msg, duration = 2000) { const t = document.getElementById('toast'); t.innerText = msg; t.style.display = 'block'; t.style.opacity = '1'; t.style.transform = 'translate(-50%, 0)'; setTimeout(() => { t.style.display = 'none'; }, duration); };
 window.exportData = function() { const data = window.appState; const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `雲端收費備份_${new Date().toISOString().slice(0,10)}.json`; a.click(); };
 window.printAllRecords = function() { const records = window.appState.records; if (records.length === 0) { window.showToast("目前沒有紀錄可列印"); return; } let totalCash = 0; let totalTransfer = 0; let totalLinePay = 0; let totalDad = 0; let totalAmount = 0; records.forEach(r => { if (r.status === 'no_payment') return; if(r.type === 'cash') totalCash += r.amount; else if(r.type === 'transfer') totalTransfer += r.amount; else if(r.type === 'linepay') totalLinePay += r.amount; else if(r.type === 'dad') totalDad += r.amount; totalAmount += r.amount; }); const dateStr = new Date().toLocaleDateString('zh-TW', {year: 'numeric', month: '2-digit', day: '2-digit'}); let html = ` <div class="print-title">清潔收費總報表</div> <div style="text-align:center; margin-bottom:10px;">列印日期：${dateStr}</div> <div class="print-summary"> <div> <div style="font-size:12px;">本期總收入</div> <div style="font-size:16px; font-weight:bold;">$${totalAmount.toLocaleString()}</div> </div> <div> <div style="font-size:12px;">現金總額</div> <div style="font-size:16px; font-weight:bold;">$${totalCash.toLocaleString()}</div> </div> <div> <div style="font-size:12px;">匯款總額</div> <div style="font-size:16px; font-weight:bold;">$${totalTransfer.toLocaleString()}</div> </div> <div> <div style="font-size:12px;">LinePay</div> <div style="font-size:16px; font-weight:bold;">$${totalLinePay.toLocaleString()}</div> </div> <div> <div style="font-size:12px;">已匯給爸爸</div> <div style="font-size:16px; font-weight:bold;">$${totalDad.toLocaleString()}</div> </div> </div> <table class="print-table"> <thead> <tr> <th width="12%">日期</th> <th width="10%">經手人</th> <th width="25%">地址/客戶</th> <th width="10%">項目</th> <th width="10%">金額</th> <th width="10%">方式</th> <th width="13%">月份</th> <th width="10%">備註</th> </tr> </thead> <tbody> `; records.forEach(r => { const d = new Date(r.date); const dStr = `${d.getMonth()+1}/${d.getDate()}`; const cat = r.category === 'tank' ? '水塔' : '樓梯'; let type = '現金'; if(r.type === 'transfer') type = '匯款'; if(r.type === 'linepay') type = 'LinePay'; if(r.type === 'dad') type = '已匯爸'; let note = r.note || ''; if(r.status === 'no_receipt') note += ' (欠收據)'; if(r.status === 'no_payment') note += ' (未入帳)'; const collector = r.collector || '子晴'; const floor = r.floor ? `(${r.floor})` : ''; html += ` <tr> <td>${dStr}</td> <td>${collector}</td> <td>${r.address} ${floor}</td> <td>${cat}</td> <td style="font-weight:bold;">$${r.amount.toLocaleString()}</td> <td>${type}</td> <td style="font-size:11px;">${r.months || ''}</td> <td style="font-size:11px;">${note}</td> </tr> `; }); html += ` </tbody> </table> `; document.getElementById('printContainer').innerHTML = html; window.print(); };
-window.openAddCustomerModal = function() { window.appState.editingCustomerId = null; document.getElementById('customerModalTitle').innerHTML = '<i class="fa-solid fa-user-plus text-green-600"></i> 新增常用客戶'; document.getElementById('newCustAddr').value = ''; document.getElementById('newCustAmt').value = ''; document.getElementById('newCustFloor').value = ''; document.getElementById('newCustServiceDate').value = ''; document.getElementById('addCustomerModal').classList.remove('hidden'); window.setEditCustCategory('stairs'); setTimeout(() => document.getElementById('newCustAddr').focus(), 100); };
+window.openAddCustomerModal = function() { window.appState.editingCustomerId = null; document.getElementById('customerModalTitle').innerHTML = '<i class="fa-solid fa-user-plus text-green-600"></i> 新增常用客戶'; document.getElementById('newCustAddr').value = ''; document.getElementById('newCustAmt').value = ''; document.getElementById('newCustFloor').value = ''; document.getElementById('newCustServiceDate').value = ''; document.getElementById('newCustNote').value = ''; document.getElementById('addCustomerModal').classList.remove('hidden'); window.setEditCustCategory('stairs'); setTimeout(() => document.getElementById('newCustAddr').focus(), 100); };
 window.openEditCustomerModal = function(id, addr, amt, floor, cat) { window.appState.editingCustomerId = id; document.getElementById('customerModalTitle').innerHTML = '<i class="fa-solid fa-pen-to-square text-blue-600"></i> 編輯常用客戶'; document.getElementById('newCustAddr').value = addr; document.getElementById('newCustAmt').value = amt; document.getElementById('newCustFloor').value = floor; window.setEditCustCategory(cat || 'stairs'); document.getElementById('addCustomerModal').classList.remove('hidden'); };
 window.closeAddCustomerModal = function(e) { if(e && e.target !== e.currentTarget) return; document.getElementById('addCustomerModal').classList.add('hidden'); };
 window.openCustomerSelect = function() { window.renderCustomerSelect(); document.getElementById('customerModal').classList.remove('hidden'); };
@@ -946,8 +950,21 @@ window.onload = function() {
     const dateStr = today.toISOString().split('T')[0];
     document.getElementById('inputDate').value = dateStr;
     document.getElementById('headerDate').innerText = `${today.getMonth() + 1}/${today.getDate()} (週${['日','一','二','三','四','五','六'][today.getDay()]})`;
-    const savedSalary = localStorage.getItem('cleaning_app_salary');
-    if(savedSalary) document.getElementById('mySalary').value = savedSalary;
+    
+    // NEW: 載入多筆支出
+    const savedExpenses = localStorage.getItem('cleaning_app_expenses_v2');
+    if(savedExpenses) {
+        try {
+            const data = JSON.parse(savedExpenses);
+            if(Array.isArray(data) && data.length > 0) {
+                data.forEach(item => window.addExpenseRow(item.name, item.amount));
+            } else {
+                window.addExpenseRow('我的薪水', ''); // 預設一行
+            }
+        } catch(e) { window.addExpenseRow('我的薪水', ''); }
+    } else {
+        window.addExpenseRow('我的薪水', '');
+    }
     
     if(document.getElementById('inputServiceType')) {
         window.setServiceCategory('stairs');
