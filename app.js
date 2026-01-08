@@ -2,7 +2,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import { 
     getFirestore, collection, doc, addDoc, deleteDoc, updateDoc, writeBatch,
-    onSnapshot, query, orderBy, enableIndexedDbPersistence, serverTimestamp, where, getDocs 
+    onSnapshot, query, orderBy, enableIndexedDbPersistence, serverTimestamp 
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 // --- 1. 初始化全域變數 ---
@@ -246,7 +246,6 @@ window.editCustNote = async function(id, currentNote) {
     }
 };
 
-// NEW: 更新客戶預設金額
 window.updateCustomerPrice = async function(address, newAmount) {
     const cust = window.appState.customers.find(c => c.address === address);
     if(cust) {
@@ -473,7 +472,8 @@ window.renderYearlyReport = function() {
                     else if(r.status === 'no_payment') statusHtml = `<span class="text-orange-500 text-xs ml-2"><i class="fa-solid fa-hourglass-half"></i> 欠款</span>`;
                     
                     const safeNote = (r.note || '').replace(/'/g, "\\'");
-                    const onclick = `openReportAction('edit', '${addr}', ${year}, ${d.getMonth()+1}, '${r.id}', '${r.date}', ${r.amount}, '${r.type}', '${r.floor || ''}', '${safeNote}', '${r.status}')`;
+                    // 水塔點擊編輯，不需要多月編輯功能，保持原樣
+                    const onclick = `openReportAction('edit', '${addr}', ${year}, ${d.getMonth()+1}, '${r.id}', '${r.date}', ${r.amount}, '${r.type}', '${r.floor || ''}', '${safeNote}', '${r.status}', '${r.months || ''}')`;
 
                     listHtml += `
                         <div onclick="${onclick}" class="flex justify-between items-center p-2 border-b border-gray-100 active:bg-gray-50 cursor-pointer">
@@ -518,7 +518,8 @@ window.renderYearlyReport = function() {
                                     status: status, date: collectDate, id: r.id, 
                                     amount: r.amount, fullDate: r.date, 
                                     type: r.type || 'cash', floor: r.floor || '',
-                                    note: r.note || '' 
+                                    note: r.note || '',
+                                    months: r.months // NEW: 傳遞完整的月份字串
                                 }; 
                             } 
                         }); 
@@ -535,7 +536,8 @@ window.renderYearlyReport = function() {
 
                 if(info) { 
                     const safeNote = (info.note || '').replace(/'/g, "\\'");
-                    onclick = `openReportAction('edit', '${addr}', ${year}, ${m}, '${info.id}', '${info.fullDate}', ${info.amount}, '${info.type}', '${info.floor}', '${safeNote}', '${info.status}')`; 
+                    const safeMonths = (info.months || '').replace(/'/g, "\\'"); // 安全處理月份字串
+                    onclick = `openReportAction('edit', '${addr}', ${year}, ${m}, '${info.id}', '${info.fullDate}', ${info.amount}, '${info.type}', '${info.floor}', '${safeNote}', '${info.status}', '${safeMonths}')`; 
                     
                     let typeText = '💵 現金'; let typeBg = 'bg-emerald-50 text-emerald-700';
                     if(info.type === 'transfer') { typeText = '🏦 匯款'; typeBg = 'bg-blue-50 text-blue-700'; }
@@ -559,14 +561,15 @@ window.renderYearlyReport = function() {
 
 // --- Modal Functions ---
 
-window.openReportAction = function(mode, address, year, month, recordId, date, amount, type, floor, note, status) { 
+// NEW: 增加 monthsStr 參數
+window.openReportAction = function(mode, address, year, month, recordId, date, amount, type, floor, note, status, monthsStr) { 
     const title = document.getElementById('reportActionTitle'); 
     const content = document.getElementById('reportActionContent'); 
     const getTypeSelect = (id, currentVal) => `<div><label class="block text-xs text-gray-500 mb-1">方式</label><select id="${id}" class="w-full p-2 border rounded bg-white"><option value="cash" ${currentVal === 'cash' ? 'selected' : ''}>💵 現金</option><option value="transfer" ${currentVal === 'transfer' ? 'selected' : ''}>🏦 匯款</option><option value="linepay" ${currentVal === 'linepay' ? 'selected' : ''}>🟢 LinePay</option><option value="dad" ${currentVal === 'dad' ? 'selected' : ''}>👴 匯給爸爸</option></select></div>`;
     const getFloorInput = (id, val) => `<div><label class="block text-xs text-gray-500 mb-1">樓層/戶號</label><input type="text" id="${id}" value="${val || ''}" class="w-full p-2 border rounded bg-white" placeholder="例如：5F"></div>`;
     const getNoteInput = (id, val) => `<div><label class="block text-xs text-gray-500 mb-1">備註</label><input type="text" id="${id}" value="${val || ''}" class="w-full p-2 border rounded bg-white" placeholder="備註..."></div>`;
     
-    // NEW: 更新預設金額的 Checkbox HTML
+    // Checkbox for Updating Default Price
     const getUpdatePriceCheckbox = () => `<label class="flex items-center mt-2 text-xs text-blue-600 font-bold bg-blue-50 p-2 rounded cursor-pointer select-none"><input type="checkbox" id="updateDefaultPrice" class="mr-2 w-4 h-4"> 同步更新此地址的預設金額</label>`;
 
     const getStatusButtons = (statusVal) => {
@@ -582,7 +585,32 @@ window.openReportAction = function(mode, address, year, month, recordId, date, a
 
     if(mode === 'edit') {
         title.innerText = `編輯紀錄：${address}`; 
+        
+        // NEW: 編輯模式也要顯示月份選擇器
+        window.appState.reportBatchMonths.clear();
+        if(monthsStr) {
+            const parts = monthsStr.match(new RegExp(`${year}年\\s*([0-9,]+)`));
+            if(parts && parts[1]) {
+                parts[1].split(',').map(Number).forEach(m => window.appState.reportBatchMonths.add(m));
+            }
+        } else {
+            // 如果沒有傳入月份字串，預設選取當前點擊的月份 (相容舊資料)
+            if(month) window.appState.reportBatchMonths.add(month);
+        }
+
+        let monthSelectorHtml = '';
+        // 只有洗樓梯才需要選月份
+        if (monthsStr || month) {
+            monthSelectorHtml = '<div class="grid grid-cols-6 gap-2 mb-3">';
+            for(let i=1; i<=12; i++) {
+                const isSelected = window.appState.reportBatchMonths.has(i) ? 'bg-blue-500 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200';
+                monthSelectorHtml += `<button onclick="toggleBatchMonth(this, ${i})" class="p-2 rounded border text-sm font-bold ${isSelected}">${i}月</button>`;
+            }
+            monthSelectorHtml += '</div>';
+        }
+
         content.innerHTML = ` 
+            ${monthSelectorHtml ? '<div class="text-xs text-gray-400 mb-1">編輯月份</div>' + monthSelectorHtml : ''}
             <div class="grid grid-cols-2 gap-2 mb-2"><div><label class="block text-xs text-gray-500 mb-1">收款日期</label><input type="date" id="reportEditDate" value="${date}" class="w-full p-2 border rounded"></div>${getFloorInput('reportEditFloor', floor)}</div>
             <div class="grid grid-cols-2 gap-2 mb-2">
                 <div><label class="block text-xs text-gray-500 mb-1">金額</label><input type="number" id="reportEditAmount" value="${amount}" class="w-full p-2 border rounded"></div>
@@ -591,7 +619,7 @@ window.openReportAction = function(mode, address, year, month, recordId, date, a
             ${getUpdatePriceCheckbox()}
             ${getStatusButtons(status)}
             ${getNoteInput('reportEditNote', note)}
-            <div class="grid grid-cols-2 gap-2 mt-4"><button onclick="deleteReportRecord('${recordId}')" class="py-2 bg-red-100 text-red-600 rounded-lg font-bold">刪除紀錄</button><button onclick="updateReportRecord('${recordId}', '${address}', document.getElementById('reportEditDate').value, document.getElementById('reportEditAmount').value, document.getElementById('reportEditType').value, document.getElementById('reportEditFloor').value, document.getElementById('reportEditNote').value, document.getElementById('reportEditStatus').value)" class="py-2 bg-blue-600 text-white rounded-lg font-bold">儲存修改</button></div>`; 
+            <div class="grid grid-cols-2 gap-2 mt-4"><button onclick="deleteReportRecord('${recordId}')" class="py-2 bg-red-100 text-red-600 rounded-lg font-bold">刪除紀錄</button><button onclick="updateReportRecord('${recordId}', '${address}', ${year}, document.getElementById('reportEditDate').value, document.getElementById('reportEditAmount').value, document.getElementById('reportEditType').value, document.getElementById('reportEditFloor').value, document.getElementById('reportEditNote').value, document.getElementById('reportEditStatus').value)" class="py-2 bg-blue-600 text-white rounded-lg font-bold">儲存修改</button></div>`; 
     } else { 
         const cust = window.appState.customers.find(c => c.address === address); 
         const defAmount = cust ? cust.amount : ''; 
@@ -662,7 +690,7 @@ window.toggleBatchMonth = function(btn, m) {
 window.batchAddReportRecords = async function(address, year, amount, type, floor, note, status) { 
     if(!currentUser) return; 
     
-    // NEW: 檢查是否要更新預設金額
+    // 檢查是否要更新預設金額
     const updatePrice = document.getElementById('updateDefaultPrice').checked;
     if(updatePrice) { window.updateCustomerPrice(address, amount); }
 
@@ -708,17 +736,32 @@ window.batchAddReportRecords = async function(address, year, amount, type, floor
 
 window.closeReportActionModal = function(e) { if(e && e.target !== e.currentTarget) return; document.getElementById('reportActionModal').classList.add('hidden'); };
 
-window.updateReportRecord = async function(docId, address, date, amount, type, floor, note, status) { 
+// NEW: 升級後的更新函式，支援多月編輯
+window.updateReportRecord = async function(docId, address, year, date, amount, type, floor, note, status) { 
     if(!currentUser) return; 
     
-    // NEW: 檢查是否要更新預設金額
+    // 檢查是否要更新預設金額
     const updatePrice = document.getElementById('updateDefaultPrice').checked;
     if(updatePrice) { window.updateCustomerPrice(address, amount); }
 
+    // 構建新的月份字串
+    let newMonthsStr = '';
+    if(window.appState.reportBatchMonths.size > 0) {
+        // 將 Set 轉為陣列並排序
+        const sortedMonths = Array.from(window.appState.reportBatchMonths).sort((a,b)=>a-b);
+        newMonthsStr = `${year}年 ${sortedMonths.join(', ')}月`;
+    }
+
     try { 
-        await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'records', docId), { 
+        const updateData = { 
             date: date, amount: parseInt(amount), type: type, floor: floor, note: note, status: status 
-        }); 
+        };
+        // 只有當真的有選月份時才更新 months 欄位，避免水塔資料被清空
+        if(newMonthsStr) {
+            updateData.months = newMonthsStr;
+        }
+
+        await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'records', docId), updateData); 
         window.closeReportActionModal(null); 
         window.showToast("已更新"); 
     } catch(e) { window.showToast("更新失敗"); } 
