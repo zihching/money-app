@@ -54,14 +54,14 @@
     <div class="container mx-auto px-4 py-4 max-w-md pb-28">
         <div id="view-entry">
             <div class="flex p-1 bg-gray-100 rounded-xl mb-4 shadow-inner border border-gray-200">
-                <button onclick="setCollector('子晴')" id="tab-zih-cing" class="collector-tab flex-1 py-3 rounded-lg text-sm font-bold text-gray-400 flex items-center justify-center gap-1">🎠 子晴</button>
-                <button onclick="setCollector('子涵')" id="tab-zih-han" class="collector-tab flex-1 py-3 rounded-lg text-sm font-bold text-gray-400 flex items-center justify-center gap-1">🌸 子涵</button>
-                <button onclick="setCollector('宗敬')" id="tab-zong-jing" class="collector-tab flex-1 py-3 rounded-lg text-sm font-bold text-gray-400 flex items-center justify-center gap-1">☁️ 宗敬</button>
+                <button type="button" onclick="setCollector('子晴')" id="tab-zih-cing" class="collector-tab flex-1 py-3 rounded-lg text-sm font-bold text-gray-400 flex items-center justify-center gap-1">🎠 子晴</button>
+                <button type="button" onclick="setCollector('子涵')" id="tab-zih-han" class="collector-tab flex-1 py-3 rounded-lg text-sm font-bold text-gray-400 flex items-center justify-center gap-1">🌸 子涵</button>
+                <button type="button" onclick="setCollector('宗敬')" id="tab-zong-jing" class="collector-tab flex-1 py-3 rounded-lg text-sm font-bold text-gray-400 flex items-center justify-center gap-1">☁️ 宗敬</button>
             </div>
             <div class="card p-5 border-t-4 border-[#e6dbd0] transition-colors duration-300" id="entryCard">
                 <div class="flex justify-between items-center mb-4">
                     <h2 class="text-lg font-bold text-gray-800 flex items-center"><i class="fa-solid fa-pen-circle mr-2 opacity-80"></i> 新增</h2>
-                    <button onclick="openCustomerSelect()" class="bg-gray-600 text-white text-sm px-4 py-2 rounded-lg shadow active:scale-95 flex items-center transition-all" id="quickSelectBtn"><i class="fa-solid fa-folder-open mr-2"></i> 快速選客戶</button>
+                    <button type="button" onclick="openCustomerSelect()" class="bg-gray-600 text-white text-sm px-4 py-2 rounded-lg shadow active:scale-95 flex items-center transition-all" id="quickSelectBtn"><i class="fa-solid fa-folder-open mr-2"></i> 快速選客戶</button>
                 </div>
                 <div class="space-y-4">
                     <div class="flex gap-2 mb-3">
@@ -117,8 +117,8 @@
                     </div>
 
                     <div class="grid grid-cols-2 gap-2 mt-2">
-                        <button onclick="addToPending()" class="w-full py-4 rounded-xl text-lg font-bold bg-gray-200 text-gray-600 shadow active:scale-95 transition-all flex justify-center items-center"><i class="fa-solid fa-list-check mr-2"></i> 加入清單</button>
-                        <button onclick="addRecord()" class="w-full btn-primary py-4 rounded-xl text-lg font-bold shadow-lg shadow-gray-300 flex justify-center items-center gap-2 transition-all active:scale-95" id="addBtn"><i class="fa-solid fa-check mr-2"></i> 直接收款</button>
+                        <button type="button" onclick="addToPending()" class="w-full py-4 rounded-xl text-lg font-bold bg-gray-200 text-gray-600 shadow active:scale-95 transition-all flex justify-center items-center"><i class="fa-solid fa-list-check mr-2"></i> 加入清單</button>
+                        <button type="button" onclick="addRecord()" class="w-full btn-primary py-4 rounded-xl text-lg font-bold shadow-lg shadow-gray-300 flex justify-center items-center gap-2 transition-all active:scale-95" id="addBtn"><i class="fa-solid fa-check mr-2"></i> 直接收款</button>
                     </div>
                 </div>
             </div>
@@ -128,7 +128,7 @@
                     <h3 class="font-bold text-gray-700 uppercase text-sm tracking-wider flex items-center gap-1">
                         <i class="fa-solid fa-clipboard-list text-blue-500"></i> 待收清單 <span class="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full ml-1" id="pendingCount">0</span>
                     </h3>
-                    <button onclick="confirmClearAllPending()" class="text-xs bg-red-100 text-red-500 px-3 py-1.5 rounded-lg font-bold hover:bg-red-200 transition-colors shadow-sm active:scale-95">
+                    <button type="button" onclick="confirmClearAllPending()" class="text-xs bg-red-100 text-red-500 px-3 py-1.5 rounded-lg font-bold hover:bg-red-200 transition-colors shadow-sm active:scale-95">
                         <i class="fa-solid fa-trash-can mr-1"></i> 清空全部
                     </button>
                 </div>
@@ -146,9 +146,9 @@
                 <div class="bg-blue-50 p-3 rounded-xl mb-6 border border-blue-100">
                     <label class="block text-xs font-bold text-blue-600 mb-2">結算月份</label>
                     <div class="flex items-center gap-2">
-                        <button onclick="changeSettleMonth(-1)" class="w-10 h-10 bg-white border border-blue-200 rounded-lg text-blue-600 shadow-sm active:bg-blue-50 flex items-center justify-center transition-all"><i class="fa-solid fa-chevron-left"></i></button>
+                        <button type="button" onclick="changeSettleMonth(-1)" class="w-10 h-10 bg-white border border-blue-200 rounded-lg text-blue-600 shadow-sm active:bg-blue-50 flex items-center justify-center transition-all"><i class="fa-solid fa-chevron-left"></i></button>
                         <input type="month" id="settleMonthPicker" onchange="updateSummary()" class="flex-1 p-2 h-10 border border-blue-200 rounded-lg text-lg font-bold text-center text-gray-700 outline-none bg-white shadow-sm">
-                        <button onclick="changeSettleMonth(1)" class="w-10 h-10 bg-white border border-blue-200 rounded-lg text-blue-600 shadow-sm active:bg-blue-50 flex items-center justify-center transition-all"><i class="fa-solid fa-chevron-right"></i></button>
+                        <button type="button" onclick="changeSettleMonth(1)" class="w-10 h-10 bg-white border border-blue-200 rounded-lg text-blue-600 shadow-sm active:bg-blue-50 flex items-center justify-center transition-all"><i class="fa-solid fa-chevron-right"></i></button>
                     </div>
                 </div>
 
@@ -169,7 +169,7 @@
                         </label>
                         <div id="expenseList" class="space-y-2 mb-3">
                             </div>
-                        <button onclick="addExpenseRow()" class="w-full py-2 bg-white border border-yellow-300 text-yellow-700 rounded-lg text-sm font-bold shadow-sm active:bg-yellow-50">
+                        <button type="button" onclick="addExpenseRow()" class="w-full py-2 bg-white border border-yellow-300 text-yellow-700 rounded-lg text-sm font-bold shadow-sm active:bg-yellow-50">
                             <i class="fa-solid fa-plus"></i> 新增支出項目
                         </button>
                         <div class="mt-3 text-right text-sm text-yellow-800 font-bold">
@@ -186,7 +186,7 @@
         <div id="view-report" class="hidden">
             <div class="card p-4">
                 <div class="mb-4">
-                    <button onclick="checkArrears()" class="w-full py-3 bg-red-50 text-red-600 rounded-xl font-bold shadow-sm flex justify-center items-center gap-2 active:bg-red-100 transition-colors border border-red-100">
+                    <button type="button" onclick="checkArrears()" class="w-full py-3 bg-red-50 text-red-600 rounded-xl font-bold shadow-sm flex justify-center items-center gap-2 active:bg-red-100 transition-colors border border-red-100">
                         <i class="fa-solid fa-satellite-dish"></i> 偵測欠費名單 (超過1個月)
                     </button>
                 </div>
@@ -195,17 +195,17 @@
                     <h2 class="text-lg font-bold text-gray-800" id="reportTitle">年度報表</h2>
                      <div class="flex items-center gap-2">
                         <div class="flex items-center bg-gray-100 rounded-lg overflow-hidden">
-                            <button onclick="changeReportYear(-1)" class="px-3 py-1 hover:bg-gray-200 text-gray-600"><i class="fa-solid fa-chevron-left"></i></button>
+                            <button type="button" onclick="changeReportYear(-1)" class="px-3 py-1 hover:bg-gray-200 text-gray-600"><i class="fa-solid fa-chevron-left"></i></button>
                             <span class="px-2 font-bold text-emerald-600" id="reportYearDisplay">114年</span>
-                            <button onclick="changeReportYear(1)" class="px-3 py-1 hover:bg-gray-200 text-gray-600"><i class="fa-solid fa-chevron-right"></i></button>
+                            <button type="button" onclick="changeReportYear(1)" class="px-3 py-1 hover:bg-gray-200 text-gray-600"><i class="fa-solid fa-chevron-right"></i></button>
                         </div>
-                        <button onclick="openManageCustomerModal()" class="w-8 h-8 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center hover:bg-gray-200 transition-colors shadow-sm"><i class="fa-solid fa-list-ul"></i></button>
+                        <button type="button" onclick="openManageCustomerModal()" class="w-8 h-8 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center hover:bg-gray-200 transition-colors shadow-sm"><i class="fa-solid fa-list-ul"></i></button>
                     </div>
                 </div>
                 <div class="flex justify-center gap-2 mb-4 bg-gray-50 p-1 rounded-lg">
-                    <button onclick="setReportCategory('all')" id="rep-cat-all" class="flex-1 py-1.5 rounded-md text-sm font-bold bg-white text-gray-800 shadow-sm transition-all border border-gray-200">全部</button>
-                    <button onclick="setReportCategory('stairs')" id="rep-cat-stairs" class="flex-1 py-1.5 rounded-md text-sm font-bold text-gray-400 hover:bg-white hover:shadow-sm transition-all border border-transparent">🪜 樓梯</button>
-                    <button onclick="setReportCategory('tank')" id="rep-cat-tank" class="flex-1 py-1.5 rounded-md text-sm font-bold text-gray-400 hover:bg-white hover:shadow-sm transition-all border border-transparent">💧 水塔</button>
+                    <button type="button" onclick="setReportCategory('all')" id="rep-cat-all" class="flex-1 py-1.5 rounded-md text-sm font-bold bg-white text-gray-800 shadow-sm transition-all border border-gray-200">全部</button>
+                    <button type="button" onclick="setReportCategory('stairs')" id="rep-cat-stairs" class="flex-1 py-1.5 rounded-md text-sm font-bold text-gray-400 hover:bg-white hover:shadow-sm transition-all border border-transparent">🪜 樓梯</button>
+                    <button type="button" onclick="setReportCategory('tank')" id="rep-cat-tank" class="flex-1 py-1.5 rounded-md text-sm font-bold text-gray-400 hover:bg-white hover:shadow-sm transition-all border border-transparent">💧 水塔</button>
                 </div>
                 <div class="text-xs text-gray-400 mb-2 flex gap-3 justify-center"><div class="flex items-center"><span class="w-2 h-2 rounded-full bg-emerald-500 mr-1"></span> 已收</div><div class="flex items-center"><span class="w-2 h-2 rounded-full bg-white border border-orange-400 mr-1"></span> 待處理</div><div class="flex items-center"><span class="w-2 h-2 rounded-full bg-gray-100 border border-gray-300 mr-1"></span> 未收</div></div>
                 <div id="yearReportGrid" class="space-y-4"></div>
@@ -217,8 +217,8 @@
                 <h2 class="text-lg font-bold text-gray-800 mb-3 flex items-center"><i class="fa-solid fa-address-book text-blue-500 mr-2"></i> 常用客戶 / 路線管理</h2>
                 <p class="text-xs text-gray-500 mb-4">建立後，記帳時可直接選擇。</p>
                 <div class="grid grid-cols-2 gap-2 mb-3">
-                    <button onclick="openAddCustomerModal()" class="py-2.5 bg-blue-600 text-white rounded-lg text-sm font-bold shadow active:bg-blue-700"><i class="fa-solid fa-plus mr-1"></i> 新增常用客戶</button>
-                    <button onclick="importFavoritesToPending()" class="py-2.5 bg-emerald-500 text-white rounded-lg text-sm font-bold shadow active:bg-emerald-600"><i class="fa-solid fa-route mr-1"></i> 匯入今日路線</button>
+                    <button type="button" onclick="openAddCustomerModal()" class="py-2.5 bg-blue-600 text-white rounded-lg text-sm font-bold shadow active:bg-blue-700"><i class="fa-solid fa-plus mr-1"></i> 新增常用客戶</button>
+                    <button type="button" onclick="importFavoritesToPending()" class="py-2.5 bg-emerald-500 text-white rounded-lg text-sm font-bold shadow active:bg-emerald-600"><i class="fa-solid fa-route mr-1"></i> 匯入今日路線</button>
                 </div>
                 <div id="customerListSettings" class="space-y-2 max-h-60 overflow-y-auto pr-1 bg-gray-50 p-2 rounded-xl"></div>
              </div>
@@ -226,8 +226,8 @@
                 <h2 class="text-lg font-bold text-gray-700 mb-4">資料備份與工具</h2>
                 <div class="space-y-3">
                     <div class="p-4 bg-emerald-50 border border-emerald-100 rounded-xl text-emerald-800 text-sm"><i class="fa-solid fa-check-circle mr-2"></i> 資料庫狀態: <span class="font-bold text-emerald-600">已連線 (公共區域)</span><div class="text-xs text-emerald-600 mt-1 opacity-75">ID: <span id="userIdDisplay">...</span></div></div>
-                    <button onclick="printAllRecords()" class="w-full p-4 bg-blue-50 border border-blue-200 rounded-xl text-left text-blue-700 flex justify-between items-center shadow-sm active:bg-blue-100"><span class="font-bold"><i class="fa-solid fa-print mr-3"></i> 列印總報表 (給爸爸)</span><i class="fa-solid fa-chevron-right"></i></button>
-                    <button onclick="exportData()" class="w-full p-4 bg-white border border-gray-200 rounded-xl text-left active:bg-gray-50 flex justify-between items-center shadow-sm"><span class="font-medium text-gray-700"><i class="fa-solid fa-download mr-3 text-blue-500 w-5"></i> 下載備份 (JSON)</span><i class="fa-solid fa-chevron-right text-gray-300"></i></button>
+                    <button type="button" onclick="printAllRecords()" class="w-full p-4 bg-blue-50 border border-blue-200 rounded-xl text-left text-blue-700 flex justify-between items-center shadow-sm active:bg-blue-100"><span class="font-bold"><i class="fa-solid fa-print mr-3"></i> 列印總報表 (給爸爸)</span><i class="fa-solid fa-chevron-right"></i></button>
+                    <button type="button" onclick="exportData()" class="w-full p-4 bg-white border border-gray-200 rounded-xl text-left active:bg-gray-50 flex justify-between items-center shadow-sm"><span class="font-medium text-gray-700"><i class="fa-solid fa-download mr-3 text-blue-500 w-5"></i> 下載備份 (JSON)</span><i class="fa-solid fa-chevron-right text-gray-300"></i></button>
                 </div>
             </div>
         </div>
@@ -236,15 +236,15 @@
     <div id="printContainer"></div>
 
     <div class="fixed bottom-0 left-0 w-full bg-white/95 backdrop-blur-md border-t border-gray-200 flex justify-around pb-safe pt-2 z-[9999] shadow-[0_-4px_20px_rgba(0,0,0,0.05)]" id="bottomNav">
-        <button onclick="toggleView('entry')" class="flex flex-col items-center w-1/4 py-2 text-emerald-600 transition-colors" id="nav-entry"><div class="text-xl mb-1 relative"><i class="fa-solid fa-pen-to-square"></i></div><span class="text-[10px] font-bold">記帳</span></button>
-        <button onclick="toggleView('settle')" class="flex flex-col items-center w-1/4 py-2 text-gray-400 transition-colors" id="nav-settle"><div class="text-xl mb-1"><i class="fa-solid fa-calculator"></i></div><span class="text-[10px] font-medium">結算</span></button>
-        <button onclick="toggleView('report')" class="flex flex-col items-center w-1/4 py-2 text-gray-400 transition-colors" id="nav-report"><div class="text-xl mb-1"><i class="fa-solid fa-calendar-days"></i></div><span class="text-[10px] font-medium">年報</span></button>
-        <button onclick="toggleView('settings')" class="flex flex-col items-center w-1/4 py-2 text-gray-400 transition-colors" id="nav-settings"><div class="text-xl mb-1"><i class="fa-solid fa-gear"></i></div><span class="text-[10px] font-medium">設定</span></button>
+        <button type="button" onclick="toggleView('entry')" class="flex flex-col items-center w-1/4 py-2 text-emerald-600 transition-colors" id="nav-entry"><div class="text-xl mb-1 relative"><i class="fa-solid fa-pen-to-square"></i></div><span class="text-[10px] font-bold">記帳</span></button>
+        <button type="button" onclick="toggleView('settle')" class="flex flex-col items-center w-1/4 py-2 text-gray-400 transition-colors" id="nav-settle"><div class="text-xl mb-1"><i class="fa-solid fa-calculator"></i></div><span class="text-[10px] font-medium">結算</span></button>
+        <button type="button" onclick="toggleView('report')" class="flex flex-col items-center w-1/4 py-2 text-gray-400 transition-colors" id="nav-report"><div class="text-xl mb-1"><i class="fa-solid fa-calendar-days"></i></div><span class="text-[10px] font-medium">年報</span></button>
+        <button type="button" onclick="toggleView('settings')" class="flex flex-col items-center w-1/4 py-2 text-gray-400 transition-colors" id="nav-settings"><div class="text-xl mb-1"><i class="fa-solid fa-gear"></i></div><span class="text-[10px] font-medium">設定</span></button>
     </div>
 
     <div id="customerModal" class="modal-overlay hidden" onclick="closeCustomerSelect(event)">
         <div class="modal-content" onclick="event.stopPropagation()">
-            <div class="flex justify-between items-center mb-4 border-b pb-2"><h3 class="text-lg font-bold text-gray-800"><i class="fa-solid fa-users text-blue-500"></i> 選擇客戶 (<span id="customerModalCollector"></span>)</h3><button onclick="closeCustomerSelect(null)" class="text-gray-400 p-2 bg-gray-100 rounded-full w-8 h-8 flex items-center justify-center"><i class="fa-solid fa-xmark"></i></button></div>
+            <div class="flex justify-between items-center mb-4 border-b pb-2"><h3 class="text-lg font-bold text-gray-800"><i class="fa-solid fa-users text-blue-500"></i> 選擇客戶 (<span id="customerModalCollector"></span>)</h3><button type="button" onclick="closeCustomerSelect(null)" class="text-gray-400 p-2 bg-gray-100 rounded-full w-8 h-8 flex items-center justify-center"><i class="fa-solid fa-xmark"></i></button></div>
             <input type="text" id="customerSearch" onkeyup="renderCustomerSelect()" placeholder="搜尋地址..." class="w-full p-3 bg-gray-50 border rounded-xl mb-3 outline-none focus:border-blue-400">
             <div id="customerSelectList" class="space-y-2 pb-4 max-h-[50vh] overflow-y-auto"></div>
         </div>
@@ -252,7 +252,7 @@
 
     <div id="historyModal" class="modal-overlay hidden" onclick="closeHistory(event)">
         <div class="modal-content h-[70vh] flex flex-col" onclick="event.stopPropagation()">
-            <div class="flex justify-between items-center mb-4 border-b pb-2"><h3 class="text-lg font-bold text-gray-800"><i class="fa-solid fa-clock-rotate-left text-orange-500"></i> 收費紀錄</h3><button onclick="closeHistory(null)" class="text-gray-400 p-2 bg-gray-100 rounded-full w-8 h-8 flex items-center justify-center"><i class="fa-solid fa-xmark"></i></button></div>
+            <div class="flex justify-between items-center mb-4 border-b pb-2"><h3 class="text-lg font-bold text-gray-800"><i class="fa-solid fa-clock-rotate-left text-orange-500"></i> 收費紀錄</h3><button type="button" onclick="closeHistory(null)" class="text-gray-400 p-2 bg-gray-100 rounded-full w-8 h-8 flex items-center justify-center"><i class="fa-solid fa-xmark"></i></button></div>
             <div id="historyTitle" class="text-sm font-bold text-gray-500 mb-2 px-1"></div>
             <div id="historyList" class="overflow-y-auto flex-1 space-y-2"></div>
         </div>
@@ -262,7 +262,7 @@
         <div class="modal-content h-[70vh] flex flex-col" onclick="event.stopPropagation()">
             <div class="flex justify-between items-center mb-4 border-b pb-2">
                 <h3 class="text-lg font-bold text-gray-800 flex items-center"><i class="fa-solid fa-list-ul text-blue-500 mr-2"></i> <span id="breakdownTitle">明細</span></h3>
-                <button onclick="closeBreakdownModal(null)" class="text-gray-400 p-2 bg-gray-100 rounded-full w-8 h-8 flex items-center justify-center"><i class="fa-solid fa-xmark"></i></button>
+                <button type="button" onclick="closeBreakdownModal(null)" class="text-gray-400 p-2 bg-gray-100 rounded-full w-8 h-8 flex items-center justify-center"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div class="text-xs text-gray-400 mb-2 px-1">統計範圍：<span id="breakdownDateRange"></span></div>
             <div id="breakdownList" class="overflow-y-auto flex-1 space-y-2"></div>
@@ -274,7 +274,7 @@
         <div class="modal-content h-[70vh] flex flex-col" onclick="event.stopPropagation()">
             <div class="flex justify-between items-center mb-4 border-b pb-2">
                 <h3 class="text-lg font-bold text-red-600 flex items-center"><i class="fa-solid fa-triangle-exclamation mr-2"></i> 逾期未繳名單</h3>
-                <button onclick="closeArrearsModal(null)" class="text-gray-400 p-2 bg-gray-100 rounded-full w-8 h-8 flex items-center justify-center"><i class="fa-solid fa-xmark"></i></button>
+                <button type="button" onclick="closeArrearsModal(null)" class="text-gray-400 p-2 bg-gray-100 rounded-full w-8 h-8 flex items-center justify-center"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div class="text-xs text-gray-400 mb-2 px-1 bg-red-50 p-2 rounded">
                 <i class="fa-solid fa-info-circle mr-1"></i> 條件：距離上次繳費已超過 1 個月
@@ -293,15 +293,15 @@
                 <p class="text-sm text-gray-500" id="deleteConfirmText">刪除後將無法復原。</p>
             </div>
             <div class="grid grid-cols-2 gap-3">
-                <button onclick="closeDeleteModal(null)" class="py-3 bg-gray-100 text-gray-600 rounded-xl font-bold">取消</button>
-                <button id="confirmDeleteBtn" class="py-3 bg-red-500 text-white rounded-xl font-bold shadow-lg shadow-red-200">確定刪除</button>
+                <button type="button" onclick="closeDeleteModal(null)" class="py-3 bg-gray-100 text-gray-600 rounded-xl font-bold">取消</button>
+                <button type="button" id="confirmDeleteBtn" class="py-3 bg-red-500 text-white rounded-xl font-bold shadow-lg shadow-red-200">確定刪除</button>
             </div>
         </div>
     </div>
 
     <div id="confirmCollectionModal" class="modal-overlay hidden" onclick="closeConfirmCollectionModal(event)">
         <div class="modal-content" onclick="event.stopPropagation()">
-            <div class="flex justify-between items-center mb-4 border-b pb-2"><h3 class="text-lg font-bold text-emerald-600"><i class="fa-solid fa-circle-check"></i> 確認收款日期</h3><button onclick="closeConfirmCollectionModal(null)" class="text-gray-400 p-2 bg-gray-100 rounded-full w-8 h-8 flex items-center justify-center"><i class="fa-solid fa-xmark"></i></button></div>
+            <div class="flex justify-between items-center mb-4 border-b pb-2"><h3 class="text-lg font-bold text-emerald-600"><i class="fa-solid fa-circle-check"></i> 確認收款日期</h3><button type="button" onclick="closeConfirmCollectionModal(null)" class="text-gray-400 p-2 bg-gray-100 rounded-full w-8 h-8 flex items-center justify-center"><i class="fa-solid fa-xmark"></i></button></div>
             <div class="space-y-4">
                 <div class="bg-gray-50 p-3 rounded-lg border border-gray-200"><div class="text-sm text-gray-500">項目</div><div class="font-bold text-gray-800 text-lg" id="confirmModalAddress"></div><div class="mt-2"><label class="text-xs text-gray-400">收費月份</label><input type="text" id="confirmModalMonths" class="w-full p-2 border rounded font-bold text-blue-600 bg-white"></div></div>
                 <div class="grid grid-cols-2 gap-2">
@@ -312,30 +312,30 @@
                 <div><label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">特殊狀態</label><div class="flex gap-2 mb-3"><button type="button" onclick="setModalStatus('no_receipt')" id="modal-status-receipt" class="status-btn flex-1 p-2 rounded-lg bg-red-50 text-red-500 font-bold border border-red-200 flex justify-center items-center gap-1"><i class="fa-solid fa-file-invoice"></i> 欠收據</button><button type="button" onclick="setModalStatus('no_payment')" id="modal-status-payment" class="status-btn flex-1 p-2 rounded-lg bg-orange-50 text-orange-500 font-bold border border-orange-200 flex justify-center items-center gap-1"><i class="fa-solid fa-sack-dollar"></i> 欠匯款</button></div><input type="hidden" id="modalInputStatus" value="completed"></div>
                 <div><label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">備註</label><textarea id="confirmModalNote" rows="1" placeholder="填寫備註..." class="w-full p-3 bg-white border border-gray-200 rounded-xl focus:border-emerald-400 outline-none"></textarea></div>
                 <div class="text-center"><span class="text-xs text-gray-400">金額</span><div class="text-2xl font-bold text-emerald-600" id="confirmModalAmount"></div></div>
-                <button id="confirmCollectionBtn" class="w-full py-4 bg-emerald-500 text-white rounded-xl text-xl font-bold shadow-lg shadow-emerald-200 active:scale-95 transition-all">確認收款</button>
+                <button type="button" id="confirmCollectionBtn" class="w-full py-4 bg-emerald-500 text-white rounded-xl text-xl font-bold shadow-lg shadow-emerald-200 active:scale-95 transition-all">確認收款</button>
             </div>
         </div>
     </div>
     
     <div id="reportActionModal" class="modal-overlay hidden" onclick="closeReportActionModal(event)">
         <div class="modal-content" onclick="event.stopPropagation()">
-             <div class="flex justify-between items-center mb-4 border-b pb-2"><h3 class="text-lg font-bold text-gray-800" id="reportActionTitle">編輯紀錄</h3><button onclick="closeReportActionModal(null)" class="text-gray-400"><i class="fa-solid fa-times"></i></button></div>
+             <div class="flex justify-between items-center mb-4 border-b pb-2"><h3 class="text-lg font-bold text-gray-800" id="reportActionTitle">編輯紀錄</h3><button type="button" onclick="closeReportActionModal(null)" class="text-gray-400"><i class="fa-solid fa-times"></i></button></div>
             <div id="reportActionContent" class="space-y-4"></div>
         </div>
     </div>
 
     <div id="monthPickerModal" class="modal-overlay hidden" onclick="closeMonthPickerModal(event)">
         <div class="modal-content" onclick="event.stopPropagation()">
-            <div class="flex justify-between items-center mb-4"><h3 class="font-bold text-gray-700 flex items-center gap-2">選擇月份 (<span id="modalYearDisplay">114年</span>)</h3><button onclick="closeMonthPickerModal(null)" class="text-gray-400"><i class="fa-solid fa-times"></i></button></div>
-            <div class="flex items-center justify-center bg-gray-50 rounded-lg p-2 mb-4"><button onclick="changeModalYear(-1)" class="p-2 text-gray-500 hover:bg-gray-200 rounded-lg"><i class="fa-solid fa-chevron-left"></i></button><span class="mx-4 font-bold text-lg text-emerald-600" id="modalYearDisplaySpan">114年</span><button onclick="changeModalYear(1)" class="p-2 text-gray-500 hover:bg-gray-200 rounded-lg"><i class="fa-solid fa-chevron-right"></i></button></div>
+            <div class="flex justify-between items-center mb-4"><h3 class="font-bold text-gray-700 flex items-center gap-2">選擇月份 (<span id="modalYearDisplay">114年</span>)</h3><button type="button" onclick="closeMonthPickerModal(null)" class="text-gray-400"><i class="fa-solid fa-times"></i></button></div>
+            <div class="flex items-center justify-center bg-gray-50 rounded-lg p-2 mb-4"><button type="button" onclick="changeModalYear(-1)" class="p-2 text-gray-500 hover:bg-gray-200 rounded-lg"><i class="fa-solid fa-chevron-left"></i></button><span class="mx-4 font-bold text-lg text-emerald-600" id="modalYearDisplaySpan">114年</span><button type="button" onclick="changeModalYear(1)" class="p-2 text-gray-500 hover:bg-gray-200 rounded-lg"><i class="fa-solid fa-chevron-right"></i></button></div>
             <div class="grid grid-cols-4 gap-3 mb-4" id="modalMonthGrid"></div>
-            <button onclick="applyModalMonths()" class="w-full btn-primary py-3 rounded-xl font-bold">確定</button>
+            <button type="button" onclick="applyModalMonths()" class="w-full btn-primary py-3 rounded-xl font-bold">確定</button>
         </div>
     </div>
 
     <div id="addCustomerModal" class="modal-overlay hidden" onclick="closeAddCustomerModal(event)">
         <div class="modal-content" onclick="event.stopPropagation()">
-            <div class="flex justify-between items-center mb-4 border-b pb-2"><h3 class="text-lg font-bold text-gray-800" id="customerModalTitle"><i class="fa-solid fa-user-plus text-green-600"></i> 新增常用客戶</h3><button onclick="closeAddCustomerModal(null)" class="text-gray-400 p-2 bg-gray-100 rounded-full w-8 h-8 flex items-center justify-center"><i class="fa-solid fa-xmark"></i></button></div>
+            <div class="flex justify-between items-center mb-4 border-b pb-2"><h3 class="text-lg font-bold text-gray-800" id="customerModalTitle"><i class="fa-solid fa-user-plus text-green-600"></i> 新增常用客戶</h3><button type="button" onclick="closeAddCustomerModal(null)" class="text-gray-400 p-2 bg-gray-100 rounded-full w-8 h-8 flex items-center justify-center"><i class="fa-solid fa-xmark"></i></button></div>
             <div class="space-y-3">
                 <div><label class="block text-xs font-bold text-gray-500 mb-1">預設項目</label><div class="grid grid-cols-2 gap-2"><button type="button" onclick="setEditCustCategory('stairs')" id="edit-cat-stairs" class="p-2 rounded border text-sm font-bold bg-orange-100 text-orange-800 border-orange-200">🪜 洗樓梯</button><button type="button" onclick="setEditCustCategory('tank')" id="edit-cat-tank" class="p-2 rounded border text-sm font-bold bg-gray-50 text-gray-400 border-gray-200">💧 洗水塔</button></div><input type="hidden" id="editCustCategory" value="stairs"></div>
                 <div><label class="block text-xs font-bold text-gray-500 mb-1">地址 / 名稱 (必填)</label><input type="text" id="newCustAddr" placeholder="例如：錦州街" class="w-full p-3 bg-gray-50 border rounded-xl outline-none focus:border-green-500 text-lg"></div>
@@ -347,7 +347,7 @@
 
                 <div class="flex gap-2"><div class="flex-1"><label class="block text-xs font-bold text-gray-500 mb-1">金額 (必填)</label><input type="number" id="newCustAmt" placeholder="16000" inputmode="decimal" class="w-full p-3 bg-gray-50 border rounded-xl outline-none focus:border-green-500 font-bold text-emerald-600 text-lg"></div><div class="w-24"><label class="block text-xs font-bold text-gray-500 mb-1">樓層 (可不填)</label><input type="text" id="newCustFloor" placeholder="不固定" class="w-full p-3 bg-gray-50 border rounded-xl outline-none focus:border-green-500 text-center text-lg"></div></div>
                 <div><label class="block text-xs font-bold text-gray-500 mb-1">施作日期 (選填)</label><input type="date" id="newCustServiceDate" class="w-full p-3 bg-gray-50 border rounded-xl outline-none focus:border-green-500 text-lg"></div>
-                <button onclick="saveCustomer()" class="w-full py-3 bg-green-600 text-white rounded-xl font-bold mt-2 shadow text-lg">儲存</button>
+                <button type="button" onclick="saveCustomer()" class="w-full py-3 bg-green-600 text-white rounded-xl font-bold mt-2 shadow text-lg">儲存</button>
             </div>
         </div>
     </div>
@@ -356,7 +356,7 @@
         <div class="modal-content h-[80vh] flex flex-col" onclick="event.stopPropagation()">
             <div class="flex justify-between items-center mb-4 border-b pb-2">
                 <h3 class="text-lg font-bold text-gray-800"><i class="fa-solid fa-sort text-blue-500"></i> 管理排序與地址</h3>
-                <button onclick="closeManageCustomerModal(null)" class="text-gray-400 p-2 bg-gray-100 rounded-full w-8 h-8 flex items-center justify-center"><i class="fa-solid fa-xmark"></i></button>
+                <button type="button" onclick="closeManageCustomerModal(null)" class="text-gray-400 p-2 bg-gray-100 rounded-full w-8 h-8 flex items-center justify-center"><i class="fa-solid fa-xmark"></i></button>
             </div>
             
             <div class="bg-gray-50 p-3 rounded-lg border border-gray-200 mb-3">
@@ -368,7 +368,7 @@
                     </div>
                     <div class="flex gap-2">
                         <input type="date" id="mgrNewServiceDate" class="flex-1 p-2 border rounded text-sm">
-                        <button onclick="managerAddCustomer()" class="bg-emerald-500 text-white px-3 rounded font-bold w-20"><i class="fa-solid fa-plus"></i></button>
+                        <button type="button" onclick="managerAddCustomer()" class="bg-emerald-500 text-white px-3 rounded font-bold w-20"><i class="fa-solid fa-plus"></i></button>
                     </div>
                 </div>
             </div>
