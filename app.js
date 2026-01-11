@@ -472,7 +472,6 @@ window.renderYearlyReport = function() {
                     else if(r.status === 'no_payment') statusHtml = `<span class="text-orange-500 text-xs ml-2"><i class="fa-solid fa-hourglass-half"></i> 欠款</span>`;
                     
                     const safeNote = (r.note || '').replace(/'/g, "\\'");
-                    // 水塔點擊編輯，不需要多月編輯功能，保持原樣
                     const onclick = `openReportAction('edit', '${addr}', ${year}, ${d.getMonth()+1}, '${r.id}', '${r.date}', ${r.amount}, '${r.type}', '${r.floor || ''}', '${safeNote}', '${r.status}', '${r.months || ''}')`;
 
                     listHtml += `
@@ -519,7 +518,7 @@ window.renderYearlyReport = function() {
                                     amount: r.amount, fullDate: r.date, 
                                     type: r.type || 'cash', floor: r.floor || '',
                                     note: r.note || '',
-                                    months: r.months // NEW: 傳遞完整的月份字串
+                                    months: r.months 
                                 }; 
                             } 
                         }); 
@@ -536,13 +535,13 @@ window.renderYearlyReport = function() {
 
                 if(info) { 
                     const safeNote = (info.note || '').replace(/'/g, "\\'");
-                    const safeMonths = (info.months || '').replace(/'/g, "\\'"); // 安全處理月份字串
+                    const safeMonths = (info.months || '').replace(/'/g, "\\'");
                     onclick = `openReportAction('edit', '${addr}', ${year}, ${m}, '${info.id}', '${info.fullDate}', ${info.amount}, '${info.type}', '${info.floor}', '${safeNote}', '${info.status}', '${safeMonths}')`; 
                     
-                    let typeText = '💵 現金'; let typeBg = 'bg-emerald-50 text-emerald-700';
-                    if(info.type === 'transfer') { typeText = '🏦 匯款'; typeBg = 'bg-blue-50 text-blue-700'; }
-                    if(info.type === 'linepay') { typeText = '🟢 LP'; typeBg = 'bg-lime-50 text-lime-700'; }
-                    if(info.type === 'dad') { typeText = '👴 匯爸'; typeBg = 'bg-purple-50 text-purple-700'; }
+                    let typeText = '💵'; let typeBg = 'bg-emerald-50 text-emerald-700';
+                    if(info.type === 'transfer') { typeText = '🏦'; typeBg = 'bg-blue-50 text-blue-700'; }
+                    if(info.type === 'linepay') { typeText = 'LP'; typeBg = 'bg-lime-50 text-lime-700'; }
+                    if(info.type === 'dad') { typeText = '👴'; typeBg = 'bg-purple-50 text-purple-700'; }
                     let borderClass = 'border-emerald-200 bg-white';
                     if(info.status === 'no_receipt') borderClass = 'border-red-300 bg-red-50'; 
                     if(info.status === 'no_payment') borderClass = 'border-orange-300 bg-orange-50'; 
@@ -558,6 +557,105 @@ window.renderYearlyReport = function() {
         container.appendChild(card); 
     }); 
 };
+
+// NEW: 欠費偵測邏輯
+window.checkArrears = function() {
+    const current = window.appState.currentCollector;
+    const customers = window.appState.customers.filter(c => (c.collector === current) || (!c.collector && current === '子晴'));
+    
+    // 計算當前絕對月份 (Year * 12 + Month)
+    const now = new Date();
+    const currentTwYear = now.getFullYear() - 1911;
+    const currentMonth = now.getMonth() + 1;
+    const currentAbs = currentTwYear * 12 + currentMonth;
+
+    const list = document.getElementById('arrearsList');
+    list.innerHTML = '';
+    let count = 0;
+
+    customers.forEach(c => {
+        // 忽略水塔客戶 (通常不適用按月催繳)
+        if(c.category === 'tank') return;
+
+        // 找出該客戶所有已付款紀錄的最大月份
+        let maxAbsPaid = 0;
+        const recs = window.appState.records.filter(r => r.address === c.address);
+        
+        if (recs.length === 0) {
+            // 從未繳過款，視為新客戶或欠很大，這裡先設為落後很久
+            maxAbsPaid = 0; 
+        } else {
+            recs.forEach(r => {
+                if(r.status === 'no_payment' || !r.months) return; // 沒入帳的不算
+                const regex = /(\d+)年\s*([0-9,]+)/g;
+                let match;
+                while ((match = regex.exec(r.months)) !== null) {
+                    const y = parseInt(match[1]);
+                    const ms = match[2].split(',').map(Number);
+                    ms.forEach(m => {
+                        const abs = y * 12 + m;
+                        if(abs > maxAbsPaid) maxAbsPaid = abs;
+                    });
+                }
+            });
+        }
+
+        // 計算差距
+        let gap = 0;
+        let lastPaidStr = "無紀錄";
+        
+        if (maxAbsPaid > 0) {
+            gap = currentAbs - maxAbsPaid;
+            const lpYear = Math.floor((maxAbsPaid - 1) / 12);
+            const lpMonth = (maxAbsPaid - 1) % 12 + 1;
+            lastPaidStr = `${lpYear}年${lpMonth}月`;
+        } else {
+            gap = 999; // 無紀錄標記
+        }
+
+        // 判斷條件：差距 >= 1 個月 (即：現在是 1月，如果只繳到 12月(差距1)，就要列出來)
+        // 使用者指令：如果最後繳費月份距離現在超過 1個月（例如現在 1 月，但他上次只繳到 12 月），就列出來給我。
+        // Gap = 1 (1月 - 12月 = 1) -> 符合條件
+        if (gap >= 1) {
+            count++;
+            const gapText = gap === 999 ? '新客戶 / 無紀錄' : `<span class="text-red-500 font-bold">${gap} 個月未繳</span>`;
+            const item = document.createElement('div');
+            item.className = 'p-3 border border-red-100 rounded-lg bg-red-50 mb-2 flex justify-between items-center';
+            item.innerHTML = `
+                <div>
+                    <div class="font-bold text-gray-800">${c.address}</div>
+                    <div class="text-xs text-gray-500">上次繳至: ${lastPaidStr}</div>
+                </div>
+                <div class="text-right">
+                    <div class="text-sm">${gapText}</div>
+                    <div class="text-xs text-emerald-600 font-bold">$${c.amount}</div>
+                </div>
+            `;
+            // 點擊直接開啟補登
+            item.onclick = () => {
+                window.closeArrearsModal(null);
+                // 自動帶入下一個要繳的月份
+                let nextMonth = 1;
+                let nextYear = currentTwYear;
+                if (maxAbsPaid > 0) {
+                    const nextAbs = maxAbsPaid + 1;
+                    nextYear = Math.floor((nextAbs - 1) / 12);
+                    nextMonth = (nextAbs - 1) % 12 + 1;
+                }
+                window.openReportAction('add', c.address, nextYear, nextMonth);
+            };
+            list.appendChild(item);
+        }
+    });
+
+    if (count === 0) {
+        list.innerHTML = '<div class="text-center text-gray-400 py-10"><i class="fa-solid fa-check-circle text-4xl text-emerald-200 mb-2"></i><br>太棒了！目前沒有逾期客戶</div>';
+    }
+
+    document.getElementById('arrearsModal').classList.remove('hidden');
+};
+
+window.closeArrearsModal = function(e) { if(e && e.target !== e.currentTarget) return; document.getElementById('arrearsModal').classList.add('hidden'); };
 
 // --- Modal Functions ---
 
@@ -586,7 +684,6 @@ window.openReportAction = function(mode, address, year, month, recordId, date, a
     if(mode === 'edit') {
         title.innerText = `編輯紀錄：${address}`; 
         
-        // NEW: 編輯模式也要顯示月份選擇器
         window.appState.reportBatchMonths.clear();
         if(monthsStr) {
             const parts = monthsStr.match(new RegExp(`${year}年\\s*([0-9,]+)`));
@@ -594,12 +691,10 @@ window.openReportAction = function(mode, address, year, month, recordId, date, a
                 parts[1].split(',').map(Number).forEach(m => window.appState.reportBatchMonths.add(m));
             }
         } else {
-            // 如果沒有傳入月份字串，預設選取當前點擊的月份 (相容舊資料)
             if(month) window.appState.reportBatchMonths.add(month);
         }
 
         let monthSelectorHtml = '';
-        // 只有洗樓梯才需要選月份
         if (monthsStr || month) {
             monthSelectorHtml = '<div class="grid grid-cols-6 gap-2 mb-3">';
             for(let i=1; i<=12; i++) {
@@ -685,6 +780,7 @@ window.toggleBatchMonth = function(btn, m) {
         window.appState.reportBatchMonths.add(m);
         btn.className = 'p-2 rounded border border-blue-600 text-sm font-bold bg-blue-500 text-white';
     }
+    // document.getElementById('batchCount').innerText = window.appState.reportBatchMonths.size;
 };
 
 window.batchAddReportRecords = async function(address, year, amount, type, floor, note, status) { 
@@ -736,7 +832,6 @@ window.batchAddReportRecords = async function(address, year, amount, type, floor
 
 window.closeReportActionModal = function(e) { if(e && e.target !== e.currentTarget) return; document.getElementById('reportActionModal').classList.add('hidden'); };
 
-// NEW: 升級後的更新函式，支援多月編輯
 window.updateReportRecord = async function(docId, address, year, date, amount, type, floor, note, status) { 
     if(!currentUser) return; 
     
@@ -747,7 +842,6 @@ window.updateReportRecord = async function(docId, address, year, date, amount, t
     // 構建新的月份字串
     let newMonthsStr = '';
     if(window.appState.reportBatchMonths.size > 0) {
-        // 將 Set 轉為陣列並排序
         const sortedMonths = Array.from(window.appState.reportBatchMonths).sort((a,b)=>a-b);
         newMonthsStr = `${year}年 ${sortedMonths.join(', ')}月`;
     }
@@ -756,7 +850,7 @@ window.updateReportRecord = async function(docId, address, year, date, amount, t
         const updateData = { 
             date: date, amount: parseInt(amount), type: type, floor: floor, note: note, status: status 
         };
-        // 只有當真的有選月份時才更新 months 欄位，避免水塔資料被清空
+        // 只有當真的有選月份時才更新 months 欄位
         if(newMonthsStr) {
             updateData.months = newMonthsStr;
         }
