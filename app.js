@@ -449,14 +449,27 @@ window.renderYearlyReport = function() {
     const current = window.appState.currentCollector; 
     const catFilter = window.appState.reportCategory || 'all'; 
 
-    // 1. 篩選紀錄
-    let records = window.appState.records.filter(r => {
-        const rCol = r.collector || '子晴';
-        if(rCol !== current) return false;
-        const rCat = r.category || 'stairs';
-        if(catFilter !== 'all' && rCat !== catFilter) return false;
-        return true;
-    });
+    // 1. 篩選紀錄 (包含年份比對)
+  let records = window.appState.records.filter(r => {
+      // (1) 比對收費員
+      const rCol = r.collector || '子晴';
+      if(rCol !== current) return false;
+
+      // (2) 比對類別 (洗樓梯/洗水塔)
+      const rCat = r.category || 'stairs';
+      if(catFilter !== 'all' && rCat !== catFilter) return false;
+
+      // (3) 關鍵新增：比對年份 (修正 114 vs 2025 問題)
+      const rDate = r.date || ''; 
+      const rYearStr = rDate.split('-')[0]; // 抓出 2025
+      
+      // targetGregorianYear 是你在上面 447 行定義好的變數
+      if (parseInt(rYearStr) !== targetGregorianYear) {
+          return false; // 年份不對就不顯示
+      }
+
+      return true;
+  });
 
     // 2. 篩選客戶
     const custs = window.appState.customers.filter(c => {
