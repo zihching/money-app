@@ -406,14 +406,29 @@ window.changeReportYear = function(delta) {
     window.renderYearlyReport(); 
 };
 
+// --- 7. 報表邏輯 (Year Report) ---
+
+window.changeReportYear = function(delta) { 
+    window.appState.reportYear += delta; 
+    document.getElementById('reportYearDisplay').innerText = `${window.appState.reportYear}年`; 
+    window.renderYearlyReport(); 
+};
+
+// ==========================================
+// FIX: 修復水塔年份比對問題 (114 vs 2025)
+// ==========================================
 window.renderYearlyReport = function() { 
     const container = document.getElementById('yearReportGrid'); 
     if(!container) return;
     container.innerHTML = ''; 
-    const year = window.appState.reportYear; 
+    
+    const year = window.appState.reportYear; // 這是民國年，例如 114
+    const targetGregorianYear = year + 1911; // 轉成西元年，例如 2025
+    
     const current = window.appState.currentCollector; 
     const catFilter = window.appState.reportCategory || 'all'; 
 
+    // 1. 篩選紀錄
     let records = window.appState.records.filter(r => {
         const rCol = r.collector || '子晴';
         if(rCol !== current) return false;
@@ -422,6 +437,7 @@ window.renderYearlyReport = function() {
         return true;
     });
 
+    // 2. 篩選客戶
     const custs = window.appState.customers.filter(c => {
         if(!((c.collector === current) || (!c.collector && current === '子晴'))) return false;
         const cCat = c.category || 'stairs';
@@ -441,10 +457,13 @@ window.renderYearlyReport = function() {
         const addrRecords = window.appState.records.filter(r => r.address === addr); 
         const custData = custs.find(c => c.address === addr);
         const custNote = (custData && custData.note) ? custData.note : '';
+        
+        // 判斷是否為水塔
         let isTank = false;
         if (custData && custData.category === 'tank') isTank = true;
         else if (addrRecords.length > 0 && addrRecords[0].category === 'tank') isTank = true;
 
+        // 備註顯示
         const noteHtml = custNote 
             ? `<span onclick="editCustNote('${custData ? custData.id : ''}', '${custNote}')" class="ml-2 text-xs text-orange-500 cursor-pointer hover:bg-orange-50 px-1 rounded"><i class="fa-solid fa-note-sticky"></i> ${custNote}</span>` 
             : `<span onclick="editCustNote('${custData ? custData.id : ''}', '')" class="ml-2 text-xs text-gray-300 cursor-pointer hover:text-blue-500"><i class="fa-regular fa-pen-to-square"></i></span>`;
@@ -453,8 +472,16 @@ window.renderYearlyReport = function() {
         card.className = 'bg-white p-3 rounded-lg border border-gray-100 shadow-sm mb-3'; 
         
         if (isTank) {
+            // === 水塔模式 (清單顯示) ===
             let listHtml = '<div class="space-y-2">';
-            const yearRecords = addrRecords.filter(r => r.date.startsWith(String(year)));
+            
+            // FIX: 這裡改用西元年比對
+            const yearRecords = addrRecords.filter(r => {
+                if (!r.date) return false;
+                const rYear = new Date(r.date).getFullYear();
+                return rYear === targetGregorianYear;
+            });
+            
             yearRecords.sort((a, b) => b.date.localeCompare(a.date));
 
             if (yearRecords.length === 0) {
@@ -501,25 +528,23 @@ window.renderYearlyReport = function() {
             `;
 
         } else {
+            // === 樓梯模式 (12宮格顯示) ===
             const monthInfo = Array(13).fill(null); 
             addrRecords.forEach(r => { 
                 const d = new Date(r.date); 
                 const collectDate = (d instanceof Date && !isNaN(d)) ? `${d.getMonth()+1}/${d.getDate()}` : '??'; 
+                
+                // 樓梯還是比對 "114年" 字串，這部分保持原樣
                 if (r.months && r.months.includes(`${year}年`)) { 
                     const parts = r.months.match(new RegExp(`${year}年\\s*([0-9,]+)`)); 
                     if(parts && parts[1]) { 
                         const paidMonths = parts[1].split(',').map(Number); 
                         paidMonths.forEach(m => { 
                             if(m >= 1 && m <= 12) { 
-                                let status = 'paid'; 
-                                if(r.status === 'no_payment') status = 'no_payment'; 
-                                else if(r.status === 'no_receipt') status = 'no_receipt';
                                 monthInfo[m] = { 
-                                    status: status, date: collectDate, id: r.id, 
-                                    amount: r.amount, fullDate: r.date, 
-                                    type: r.type || 'cash', floor: r.floor || '',
-                                    note: r.note || '',
-                                    months: r.months 
+                                    status: r.status, date: collectDate, id: r.id, 
+                                    amount: r.amount, fullDate: r.date, type: r.type, 
+                                    floor: r.floor, note: r.note, months: r.months 
                                 }; 
                             } 
                         }); 
@@ -558,98 +583,6 @@ window.renderYearlyReport = function() {
         container.appendChild(card); 
     }); 
 };
-
-// NEW: 欠費偵測邏輯
-window.checkArrears = function() {
-    const current = window.appState.currentCollector;
-    const customers = window.appState.customers.filter(c => (c.collector === current) || (!c.collector && current === '子晴'));
-    
-    // 計算當前絕對月份 (Year * 12 + Month)
-    const now = new Date();
-    const currentTwYear = now.getFullYear() - 1911;
-    const currentMonth = now.getMonth() + 1;
-    const currentAbs = currentTwYear * 12 + currentMonth;
-
-    const list = document.getElementById('arrearsList');
-    list.innerHTML = '';
-    let count = 0;
-
-    customers.forEach(c => {
-        if(c.category === 'tank') return; // 忽略水塔
-
-        let maxAbsPaid = 0;
-        const recs = window.appState.records.filter(r => r.address === c.address);
-        
-        if (recs.length === 0) {
-            maxAbsPaid = 0; 
-        } else {
-            recs.forEach(r => {
-                if(r.status === 'no_payment' || !r.months) return; // 沒入帳的不算
-                const regex = /(\d+)年\s*([0-9,]+)/g;
-                let match;
-                while ((match = regex.exec(r.months)) !== null) {
-                    const y = parseInt(match[1]);
-                    const ms = match[2].split(',').map(Number);
-                    ms.forEach(m => {
-                        const abs = y * 12 + m;
-                        if(abs > maxAbsPaid) maxAbsPaid = abs;
-                    });
-                }
-            });
-        }
-
-        let gap = 0;
-        let lastPaidStr = "無紀錄";
-        
-        if (maxAbsPaid > 0) {
-            gap = currentAbs - maxAbsPaid;
-            const lpYear = Math.floor((maxAbsPaid - 1) / 12);
-            const lpMonth = (maxAbsPaid - 1) % 12 + 1;
-            lastPaidStr = `${lpYear}年${lpMonth}月`;
-        } else {
-            gap = 999; // 無紀錄標記
-        }
-
-        // 判斷條件：差距 >= 1 個月
-        if (gap >= 1) {
-            count++;
-            const gapText = gap === 999 ? '新客戶 / 無紀錄' : `<span class="text-red-500 font-bold">${gap} 個月未繳</span>`;
-            const item = document.createElement('div');
-            item.className = 'p-3 border border-red-100 rounded-lg bg-red-50 mb-2 flex justify-between items-center';
-            item.innerHTML = `
-                <div>
-                    <div class="font-bold text-gray-800">${c.address}</div>
-                    <div class="text-xs text-gray-500">上次繳至: ${lastPaidStr}</div>
-                </div>
-                <div class="text-right">
-                    <div class="text-sm">${gapText}</div>
-                    <div class="text-xs text-emerald-600 font-bold">$${c.amount}</div>
-                </div>
-            `;
-            // 點擊直接開啟補登
-            item.onclick = () => {
-                window.closeArrearsModal(null);
-                let nextMonth = 1;
-                let nextYear = currentTwYear;
-                if (maxAbsPaid > 0) {
-                    const nextAbs = maxAbsPaid + 1;
-                    nextYear = Math.floor((nextAbs - 1) / 12);
-                    nextMonth = (nextAbs - 1) % 12 + 1;
-                }
-                window.openReportAction('add', c.address, nextYear, nextMonth);
-            };
-            list.appendChild(item);
-        }
-    });
-
-    if (count === 0) {
-        list.innerHTML = '<div class="text-center text-gray-400 py-10"><i class="fa-solid fa-check-circle text-4xl text-emerald-200 mb-2"></i><br>太棒了！目前沒有逾期客戶</div>';
-    }
-
-    document.getElementById('arrearsModal').classList.remove('hidden');
-};
-
-window.closeArrearsModal = function(e) { if(e && e.target !== e.currentTarget) return; document.getElementById('arrearsModal').classList.add('hidden'); };
 
 // --- Modal Functions ---
 
