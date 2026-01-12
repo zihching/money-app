@@ -435,6 +435,9 @@ window.changeReportYear = function(delta) {
 // ==========================================
 // FIX: 修復水塔年份比對問題 (114 vs 2025)
 // ==========================================
+// ==========================================
+// FIX: 修復水塔年份比對問題 (114 vs 2025)
+// ==========================================
 window.renderYearlyReport = function() { 
     const container = document.getElementById('yearReportGrid'); 
     if(!container) return;
@@ -777,33 +780,38 @@ window.batchAddReportRecords = async function(address, year, amount, type, floor
 
 window.closeReportActionModal = function(e) { if(e && e.target !== e.currentTarget) return; document.getElementById('reportActionModal').classList.add('hidden'); };
 
-window.updateReportRecord = async function(docId, address, year, date, amount, type, floor, note, status) { 
+// --- 更新紀錄 (加入 category 參數以修正分類) ---
+window.updateReportRecord = async function(docId, address, year, date, amount, type, floor, note, status, category) { 
     if(!currentUser) return; 
     
-    // 檢查是否要更新預設金額
-    const updatePrice = document.getElementById('updateDefaultPrice').checked;
+    const updatePrice = document.getElementById('updateDefaultPrice').checked; 
     if(updatePrice) { window.updateCustomerPrice(address, amount); }
-
-    // 構建新的月份字串
-    let newMonthsStr = '';
-    if(window.appState.reportBatchMonths.size > 0) {
-        const sortedMonths = Array.from(window.appState.reportBatchMonths).sort((a,b)=>a-b);
-        newMonthsStr = `${year}年 ${sortedMonths.join(', ')}月`;
+    
+    let newMonthsStr = ''; 
+    if(window.appState.reportBatchMonths.size > 0) { 
+        const sortedMonths = Array.from(window.appState.reportBatchMonths).sort((a,b)=>a-b); 
+        newMonthsStr = `${year}年 ${sortedMonths.join(', ')}月`; 
     }
-
+    
     try { 
         const updateData = { 
-            date: date, amount: parseInt(amount), type: type, floor: floor, note: note, status: status 
-        };
-        // 只有當真的有選月份時才更新 months 欄位
-        if(newMonthsStr) {
-            updateData.months = newMonthsStr;
-        }
-
+            date: date, 
+            amount: parseInt(amount), 
+            type: type, 
+            floor: floor, 
+            note: note, 
+            status: status,
+            category: category // NEW: 這裡會把新的類別 (水塔/樓梯) 寫進去
+        }; 
+        if(newMonthsStr) { updateData.months = newMonthsStr; } 
+        
         await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'records', docId), updateData); 
         window.closeReportActionModal(null); 
-        window.showToast("已更新"); 
-    } catch(e) { window.showToast("更新失敗"); } 
+        window.showToast("已更新 (類別同步修正)"); 
+    } catch(e) { 
+        console.error(e);
+        window.showToast("更新失敗"); 
+    } 
 };
 
 window.deleteReportRecord = async function(docId) { if(!currentUser) return; if(confirm("確定刪除？這月份將變回未收狀態")) { await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'records', docId)); window.closeReportActionModal(null); window.showToast("🗑️ 已刪除"); } };
