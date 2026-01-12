@@ -1241,6 +1241,126 @@ window.closeAddCustomerModal = function(e) { if(e && e.target !== e.currentTarge
 window.openCustomerSelect = function() { window.renderCustomerSelect(); document.getElementById('customerModal').classList.remove('hidden'); };
 window.closeCustomerSelect = function(e) { if(e && e.target !== e.currentTarget) return; document.getElementById('customerModal').classList.add('hidden'); };
 
+// ==========================================
+// NEW: 第四階段 - 欠費偵測雷達功能
+// ==========================================
+
+window.checkArrears = function() {
+    const current = window.appState.currentCollector;
+    // 只抓取當前收費員的客戶 (或當前是子晴時，抓取無主客戶)
+    const customers = window.appState.customers.filter(c => (c.collector === current) || (!c.collector && current === '子晴'));
+    
+    // 計算現在是「絕對月份」(例如: 114年1月 = 1369月) 方便計算差距
+    const now = new Date();
+    const currentTwYear = now.getFullYear() - 1911;
+    const currentMonth = now.getMonth() + 1;
+    const currentAbs = currentTwYear * 12 + currentMonth;
+
+    const list = document.getElementById('arrearsList');
+    if (!list) return; // 防呆
+    list.innerHTML = '';
+    
+    let count = 0;
+
+    customers.forEach(c => {
+        // 1. 忽略洗水塔 (tank)，因為水塔通常不按月收
+        if(c.category === 'tank') return;
+
+        // 2. 找出該客戶所有「已入帳」紀錄中，最新的月份
+        let maxAbsPaid = 0;
+        const recs = window.appState.records.filter(r => r.address === c.address);
+        
+        if (recs.length === 0) {
+            maxAbsPaid = 0; // 完全沒紀錄
+        } else {
+            recs.forEach(r => {
+                // 如果是「欠匯款 (no_payment)」或沒填月份，跳過
+                if(r.status === 'no_payment' || !r.months) return;
+                
+                // 解析月份字串 (例如 "113年 12月, 114年 1月")
+                const regex = /(\d+)年\s*([0-9,]+)/g;
+                let match;
+                while ((match = regex.exec(r.months)) !== null) {
+                    const y = parseInt(match[1]);
+                    const ms = match[2].split(',').map(Number);
+                    ms.forEach(m => {
+                        const abs = y * 12 + m;
+                        if(abs > maxAbsPaid) maxAbsPaid = abs;
+                    });
+                }
+            });
+        }
+
+        // 3. 計算差距 (現在月份 - 上次繳費月份)
+        let gap = 0;
+        let lastPaidStr = "無紀錄";
+        
+        if (maxAbsPaid > 0) {
+            gap = currentAbs - maxAbsPaid;
+            // 把絕對月份轉回 年/月 顯示
+            const lpYear = Math.floor((maxAbsPaid - 1) / 12);
+            const lpMonth = (maxAbsPaid - 1) % 12 + 1;
+            lastPaidStr = `${lpYear}年${lpMonth}月`;
+        } else {
+            gap = 999; // 標記為從未繳過
+        }
+
+        // 4. 判斷條件：差距 >= 1 個月 (代表上個月沒繳)
+        if (gap >= 1) {
+            count++;
+            const gapText = gap === 999 ? '新客戶 / 無紀錄' : `<span class="text-red-500 font-bold">${gap} 個月未繳</span>`;
+            
+            const item = document.createElement('div');
+            item.className = 'p-3 border border-red-100 rounded-lg bg-red-50 mb-2 flex justify-between items-center cursor-pointer hover:bg-red-100 transition-colors';
+            item.innerHTML = `
+                <div>
+                    <div class="font-bold text-gray-800">${c.address}</div>
+                    <div class="text-xs text-gray-500">上次繳至: ${lastPaidStr}</div>
+                </div>
+                <div class="text-right">
+                    <div class="text-sm">${gapText}</div>
+                    <div class="text-xs text-emerald-600 font-bold">$${c.amount}</div>
+                </div>
+            `;
+            
+            // 點擊後，直接開啟「補登視窗」，並自動帶入下一個月
+            item.onclick = () => {
+                window.closeArrearsModal(null);
+                let nextMonth = 1;
+                let nextYear = currentTwYear;
+                
+                // 自動計算下個月是何時
+                if (maxAbsPaid > 0) {
+                    const nextAbs = maxAbsPaid + 1;
+                    nextYear = Math.floor((nextAbs - 1) / 12);
+                    nextMonth = (nextAbs - 1) % 12 + 1;
+                }
+                
+                // 呼叫年報的補登視窗
+                if(window.openReportAction) {
+                    window.openReportAction('add', c.address, nextYear, nextMonth);
+                }
+            };
+            list.appendChild(item);
+        }
+    });
+
+    if (count === 0) {
+        list.innerHTML = '<div class="text-center text-gray-400 py-10"><i class="fa-solid fa-check-circle text-4xl text-emerald-200 mb-2"></i><br>太棒了！目前沒有逾期客戶</div>';
+    }
+
+    // 顯示視窗
+    const modal = document.getElementById('arrearsModal');
+    if(modal) modal.classList.remove('hidden');
+};
+
+// 關閉欠費視窗的函式
+window.closeArrearsModal = function(e) {
+    if(e && e.target !== e.currentTarget) return;
+    const modal = document.getElementById('arrearsModal');
+    if(modal) modal.classList.add('hidden');
+};
+
 window.onload = function() {
     const today = new Date();
     const dateStr = today.toISOString().split('T')[0];
