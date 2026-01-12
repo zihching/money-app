@@ -441,6 +441,9 @@ window.changeReportYear = function(delta) {
 // ==========================================
 // 1. 報表顯示邏輯 (已修復：嚴格區分樓梯/水塔 + 年份修正)
 // ==========================================
+// ==========================================
+// 1. 報表顯示邏輯 (終極修復：強制區分顯示模式)
+// ==========================================
 window.renderYearlyReport = function() { 
     const container = document.getElementById('yearReportGrid'); 
     if(!container) return;
@@ -458,7 +461,9 @@ window.renderYearlyReport = function() {
         if(rCol !== current) return false;
 
         const rCat = r.category || 'stairs';
-        // ★★★ 關鍵修復：這裡會把跑錯棚的資料踢掉 ★★★
+        
+        // ★★★ 第一道鎖：資料層級過濾 ★★★
+        // 如果現在選「樓梯」，這裡絕對不會有「水塔」的資料流下去
         if(catFilter !== 'all' && rCat !== catFilter) return false;
 
         // 年份比對修正
@@ -469,14 +474,19 @@ window.renderYearlyReport = function() {
         return true;
     });
 
-    // 2. 篩選客戶
+    // 2. 篩選客戶 (為了顯示沒有紀錄但存在的客戶)
     const custs = window.appState.customers.filter(c => {
         if(!((c.collector === current) || (!c.collector && current === '子晴'))) return false;
+        
         const cCat = c.category || 'stairs';
+        // 如果現在是「洗樓梯」分頁，我們通常只顯示預設為樓梯的客戶
+        // 但如果有個水塔客戶這次洗了樓梯，下面的 addresses 邏輯會把他加回來
         if(catFilter !== 'all' && cCat !== catFilter) return false;
+        
         return true;
     });
 
+    // 合併地址 (客戶名單 + 有紀錄的地址)
     const addresses = custs.map(c => c.address);
     records.forEach(r => { if(!addresses.includes(r.address)) addresses.push(r.address); });
 
@@ -486,14 +496,23 @@ window.renderYearlyReport = function() {
     } 
 
     addresses.forEach(addr => { 
-        const addrRecords = window.appState.records.filter(r => r.address === addr); 
-        const custData = custs.find(c => c.address === addr);
+        // 抓出屬於這個地址、且符合當前年份、符合當前分類的紀錄
+        const addrRecords = records.filter(r => r.address === addr); 
+        const custData = window.appState.customers.find(c => c.address === addr);
         const custNote = (custData && custData.note) ? custData.note : '';
         
-        let isTank = false;
-        if (custData && custData.category === 'tank') isTank = true;
-        // 如果該地址下的第一筆紀錄是水塔，也視為水塔 (雙重檢查)
-        else if (addrRecords.length > 0 && addrRecords[0].category === 'tank') isTank = true;
+        // ★★★ 第二道鎖：強制決定顯示模式 (關鍵修改) ★★★
+        let isTankMode = false;
+        
+        if (catFilter === 'tank') {
+            isTankMode = true; // 在水塔分頁，強制用水塔模式 (清單)
+        } else if (catFilter === 'stairs') {
+            isTankMode = false; // 在樓梯分頁，強制用樓梯模式 (方格)
+        } else {
+            // 只有在「全部」分頁時，才依照客戶原本的設定來決定
+            if (custData && custData.category === 'tank') isTankMode = true;
+            else if (addrRecords.length > 0 && addrRecords[0].category === 'tank') isTankMode = true;
+        }
 
         // 備註顯示
         const noteHtml = custNote 
@@ -503,20 +522,19 @@ window.renderYearlyReport = function() {
         const card = document.createElement('div'); 
         card.className = 'bg-white p-3 rounded-lg border border-gray-100 shadow-sm mb-3'; 
         
-        if (isTank) {
-            // === 水塔模式 ===
+        if (isTankMode) {
+            // ===================================
+            // === 水塔模式 (清單顯示) ===
+            // ===================================
             let listHtml = '<div class="space-y-2">';
-            const yearRecords = addrRecords.filter(r => {
-                if (!r.date) return false;
-                const rYear = new Date(r.date).getFullYear();
-                return rYear === targetGregorianYear;
-            });
-            yearRecords.sort((a, b) => b.date.localeCompare(a.date));
+            
+            // 排序：日期新到舊
+            addrRecords.sort((a, b) => b.date.localeCompare(a.date));
 
-            if (yearRecords.length === 0) {
+            if (addrRecords.length === 0) {
                 listHtml += '<div class="text-xs text-gray-400 text-center py-2 bg-gray-50 rounded">本年度尚無紀錄</div>';
             } else {
-                yearRecords.forEach(r => {
+                addrRecords.forEach(r => {
                     const d = new Date(r.date);
                     const dateStr = `${d.getMonth()+1}/${d.getDate()}`;
                     let sDateStr = r.serviceDate ? `<span class="bg-cyan-50 text-cyan-600 px-1 rounded ml-1">🚿 ${new Date(r.serviceDate).getMonth()+1}/${new Date(r.serviceDate).getDate()}</span>` : '';
@@ -526,8 +544,9 @@ window.renderYearlyReport = function() {
                     else if(r.status === 'no_payment') statusHtml = `<span class="text-orange-500 text-xs ml-2"><i class="fa-solid fa-hourglass-half"></i> 欠款</span>`;
                     
                     const safeNote = (r.note || '').replace(/'/g, "\\'");
-                    // ★★★ 關鍵：這裡會把目前的分類 r.category 傳進去編輯視窗 ★★★
-                    const onclick = `openReportAction('edit', '${addr}', ${year}, ${d.getMonth()+1}, '${r.id}', '${r.date}', ${r.amount}, '${r.type}', '${r.floor || ''}', '${safeNote}', '${r.status}', '${r.months || ''}', '${r.category || 'tank'}')`;
+                    
+                    // 點擊編輯時，傳入 tank 標籤
+                    const onclick = `openReportAction('edit', '${addr}', ${year}, ${d.getMonth()+1}, '${r.id}', '${r.date}', ${r.amount}, '${r.type}', '${r.floor || ''}', '${safeNote}', '${r.status}', '${r.months || ''}', 'tank')`;
 
                     listHtml += `
                         <div onclick="${onclick}" class="flex justify-between items-center p-2 border-b border-gray-100 active:bg-gray-50 cursor-pointer">
@@ -540,11 +559,14 @@ window.renderYearlyReport = function() {
                 });
             }
             listHtml += '</div>';
+            // 新增按鈕：預設類別為 tank
             const addBtn = `<button type="button" onclick="openReportAction('add', '${addr}', ${year}, ${new Date().getMonth()+1}, null, null, null, null, null, null, null, null, 'tank')" class="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded hover:bg-blue-100"><i class="fa-solid fa-plus"></i></button>`;
             card.innerHTML = `<div class="font-bold text-cyan-700 mb-2 border-b border-cyan-100 pb-2 text-sm flex justify-between items-center"><div><span>💧 ${addr}</span> ${noteHtml}</div><div class="flex items-center gap-2"><span class="text-xs text-gray-300 font-normal">#${year}</span>${addBtn}</div></div>${listHtml}`;
 
         } else {
-            // === 樓梯模式 ===
+            // ===================================
+            // === 樓梯模式 (12宮格顯示) ===
+            // ===================================
             const monthInfo = Array(13).fill(null); 
             addrRecords.forEach(r => { 
                 const d = new Date(r.date); 
@@ -572,12 +594,15 @@ window.renderYearlyReport = function() {
                 const info = monthInfo[m]; 
                 let boxClass = 'border border-gray-100 bg-gray-50 rounded p-2 flex flex-col justify-between min-h-[70px] relative transition-all active:scale-95';
                 let content = `<span class="text-xs text-gray-300 font-bold absolute top-1 right-2">${m}月</span>`; 
+                
+                // 新增按鈕：預設類別為 stairs
                 let onclick = `openReportAction('add', '${addr}', ${year}, ${m}, null, null, null, null, null, null, null, null, 'stairs')`; 
 
                 if(info) { 
                     const safeNote = (info.note || '').replace(/'/g, "\\'");
                     const safeMonths = (info.months || '').replace(/'/g, "\\'");
-                    // ★★★ 關鍵：傳入 category ★★★
+                    
+                    // 點擊編輯時，傳入資料原本的 category (如果是 stairs 就傳 stairs)
                     onclick = `openReportAction('edit', '${addr}', ${year}, ${m}, '${info.id}', '${info.fullDate}', ${info.amount}, '${info.type}', '${info.floor}', '${safeNote}', '${info.status}', '${safeMonths}', '${info.category || 'stairs'}')`; 
                     
                     let typeText = '💵'; let typeBg = 'bg-emerald-50 text-emerald-700';
