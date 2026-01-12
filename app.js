@@ -1022,17 +1022,40 @@ window.renderCustomerSelect = function() {
         list.appendChild(btn); 
     }); 
 };
-window.selectCustomer = function(addr, floor, amount, category) { document.getElementById('inputAddress').value = addr; document.getElementById('inputFloor').value = floor || ''; document.getElementById('inputAmount').value = amount || ''; if(category) window.setServiceCategory(category); window.checkPaidStatus(addr); closeCustomerSelect(null); showToast("已填入資料"); 
-    const history = window.appState.records.filter(r => r.address === addr).sort((a,b) => b.date.localeCompare(a.date));
+window.selectCustomer = function(addr, defaultFloor, amount, category) { 
+    // 1. 先填入基本資料
+    document.getElementById('inputAddress').value = addr; 
+    document.getElementById('inputAmount').value = amount || ''; 
+    if(category) window.setServiceCategory(category); 
+    
+    let finalFloor = defaultFloor || '';
+    
+    // 2. 去資料庫撈這個地址的歷史紀錄，並按日期新到舊排序
+    const history = window.appState.records
+        .filter(r => r.address === addr)
+        .sort((a,b) => b.date.localeCompare(a.date));
+    
+    // 3. 智慧判斷
     if (history.length > 0) {
-        const last = history[0];
-        const lastFloor = last.floor ? `${last.floor}` : '無樓層';
+        const last = history[0]; // 取得最新的一筆
+        // 如果歷史紀錄有樓層，優先使用歷史紀錄的樓層 (覆蓋預設值)
+        if(last.floor) {
+            finalFloor = last.floor;
+        }
+        
+        // 顯示提示 Toast，告訴你上次是何時、收幾樓
         const d = new Date(last.date);
         const lastDate = `${d.getMonth()+1}/${d.getDate()}`;
-        window.showToast(`ℹ️ 上次紀錄：${lastDate} (${lastFloor})`, 4000);
+        window.showToast(`ℹ️ 上次：${lastDate} (${last.floor || '無樓層'})`, 3000);
+    } else {
+        window.showToast("已填入資料");
     }
+    
+    // 4. 最後填入樓層並檢查付費狀態
+    document.getElementById('inputFloor').value = finalFloor;
+    window.checkPaidStatus(addr); 
+    window.closeCustomerSelect(null); 
 };
-
 // --- 13. Auto-Complete (New Helper) ---
 window.updateAddressSuggestions = function(customers) {
     const dataList = document.getElementById('addressSuggestions');
