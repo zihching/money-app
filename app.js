@@ -438,38 +438,36 @@ window.changeReportYear = function(delta) {
 // ==========================================
 // FIX: 修復水塔年份比對問題 (114 vs 2025)
 // ==========================================
+// ==========================================
+// 1. 報表顯示邏輯 (已修復：嚴格區分樓梯/水塔 + 年份修正)
+// ==========================================
 window.renderYearlyReport = function() { 
     const container = document.getElementById('yearReportGrid'); 
     if(!container) return;
     container.innerHTML = ''; 
     
-    const year = window.appState.reportYear; // 這是民國年，例如 114
-    const targetGregorianYear = year + 1911; // 轉成西元年，例如 2025
+    const year = window.appState.reportYear; // 民國年
+    const targetGregorianYear = year + 1911; // 西元年
     
     const current = window.appState.currentCollector; 
     const catFilter = window.appState.reportCategory || 'all'; 
 
-    // 1. 篩選紀錄 (包含年份比對)
-  let records = window.appState.records.filter(r => {
-      // (1) 比對收費員
-      const rCol = r.collector || '子晴';
-      if(rCol !== current) return false;
+    // 1. 篩選紀錄 (嚴格過濾)
+    let records = window.appState.records.filter(r => {
+        const rCol = r.collector || '子晴';
+        if(rCol !== current) return false;
 
-      // (2) 比對類別 (洗樓梯/洗水塔)
-      const rCat = r.category || 'stairs';
-      if(catFilter !== 'all' && rCat !== catFilter) return false;
+        const rCat = r.category || 'stairs';
+        // ★★★ 關鍵修復：這裡會把跑錯棚的資料踢掉 ★★★
+        if(catFilter !== 'all' && rCat !== catFilter) return false;
 
-      // (3) 關鍵新增：比對年份 (修正 114 vs 2025 問題)
-      const rDate = r.date || ''; 
-      const rYearStr = rDate.split('-')[0]; // 抓出 2025
-      
-      // targetGregorianYear 是你在上面 447 行定義好的變數
-      if (parseInt(rYearStr) !== targetGregorianYear) {
-          return false; // 年份不對就不顯示
-      }
+        // 年份比對修正
+        const rDate = r.date || ''; 
+        const rYearStr = rDate.split('-')[0]; 
+        if (parseInt(rYearStr) !== targetGregorianYear) return false;
 
-      return true;
-  });
+        return true;
+    });
 
     // 2. 篩選客戶
     const custs = window.appState.customers.filter(c => {
@@ -492,9 +490,9 @@ window.renderYearlyReport = function() {
         const custData = custs.find(c => c.address === addr);
         const custNote = (custData && custData.note) ? custData.note : '';
         
-        // 判斷是否為水塔
         let isTank = false;
         if (custData && custData.category === 'tank') isTank = true;
+        // 如果該地址下的第一筆紀錄是水塔，也視為水塔 (雙重檢查)
         else if (addrRecords.length > 0 && addrRecords[0].category === 'tank') isTank = true;
 
         // 備註顯示
@@ -506,16 +504,13 @@ window.renderYearlyReport = function() {
         card.className = 'bg-white p-3 rounded-lg border border-gray-100 shadow-sm mb-3'; 
         
         if (isTank) {
-            // === 水塔模式 (清單顯示) ===
+            // === 水塔模式 ===
             let listHtml = '<div class="space-y-2">';
-            
-            // FIX: 這裡改用西元年比對
             const yearRecords = addrRecords.filter(r => {
                 if (!r.date) return false;
                 const rYear = new Date(r.date).getFullYear();
                 return rYear === targetGregorianYear;
             });
-            
             yearRecords.sort((a, b) => b.date.localeCompare(a.date));
 
             if (yearRecords.length === 0) {
@@ -524,17 +519,15 @@ window.renderYearlyReport = function() {
                 yearRecords.forEach(r => {
                     const d = new Date(r.date);
                     const dateStr = `${d.getMonth()+1}/${d.getDate()}`;
-                    let sDateStr = '';
-                    if(r.serviceDate) {
-                        const sd = new Date(r.serviceDate);
-                        sDateStr = `<span class="bg-cyan-50 text-cyan-600 px-1 rounded ml-1">🚿 ${sd.getMonth()+1}/${sd.getDate()}</span>`;
-                    }
+                    let sDateStr = r.serviceDate ? `<span class="bg-cyan-50 text-cyan-600 px-1 rounded ml-1">🚿 ${new Date(r.serviceDate).getMonth()+1}/${new Date(r.serviceDate).getDate()}</span>` : '';
+                    
                     let statusHtml = '';
                     if(r.status === 'no_receipt') statusHtml = `<span class="text-red-500 text-xs ml-2"><i class="fa-solid fa-triangle-exclamation"></i> 欠單</span>`;
                     else if(r.status === 'no_payment') statusHtml = `<span class="text-orange-500 text-xs ml-2"><i class="fa-solid fa-hourglass-half"></i> 欠款</span>`;
                     
                     const safeNote = (r.note || '').replace(/'/g, "\\'");
-                    const onclick = `openReportAction('edit', '${addr}', ${year}, ${d.getMonth()+1}, '${r.id}', '${r.date}', ${r.amount}, '${r.type}', '${r.floor || ''}', '${safeNote}', '${r.status}', '${r.months || ''}')`;
+                    // ★★★ 關鍵：這裡會把目前的分類 r.category 傳進去編輯視窗 ★★★
+                    const onclick = `openReportAction('edit', '${addr}', ${year}, ${d.getMonth()+1}, '${r.id}', '${r.date}', ${r.amount}, '${r.type}', '${r.floor || ''}', '${safeNote}', '${r.status}', '${r.months || ''}', '${r.category || 'tank'}')`;
 
                     listHtml += `
                         <div onclick="${onclick}" class="flex justify-between items-center p-2 border-b border-gray-100 active:bg-gray-50 cursor-pointer">
@@ -547,28 +540,15 @@ window.renderYearlyReport = function() {
                 });
             }
             listHtml += '</div>';
-            
-            const addBtn = `<button type="button" onclick="openReportAction('add', '${addr}', ${year}, ${new Date().getMonth()+1})" class="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded hover:bg-blue-100"><i class="fa-solid fa-plus"></i></button>`;
-            
-            card.innerHTML = ` 
-                <div class="font-bold text-cyan-700 mb-2 border-b border-cyan-100 pb-2 text-sm flex justify-between items-center"> 
-                    <div><span>💧 ${addr}</span> ${noteHtml}</div> 
-                    <div class="flex items-center gap-2">
-                        <span class="text-xs text-gray-300 font-normal">#${year}</span>
-                        ${addBtn}
-                    </div>
-                </div> 
-                ${listHtml} 
-            `;
+            const addBtn = `<button type="button" onclick="openReportAction('add', '${addr}', ${year}, ${new Date().getMonth()+1}, null, null, null, null, null, null, null, null, 'tank')" class="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded hover:bg-blue-100"><i class="fa-solid fa-plus"></i></button>`;
+            card.innerHTML = `<div class="font-bold text-cyan-700 mb-2 border-b border-cyan-100 pb-2 text-sm flex justify-between items-center"><div><span>💧 ${addr}</span> ${noteHtml}</div><div class="flex items-center gap-2"><span class="text-xs text-gray-300 font-normal">#${year}</span>${addBtn}</div></div>${listHtml}`;
 
         } else {
-            // === 樓梯模式 (12宮格顯示) ===
+            // === 樓梯模式 ===
             const monthInfo = Array(13).fill(null); 
             addrRecords.forEach(r => { 
                 const d = new Date(r.date); 
                 const collectDate = (d instanceof Date && !isNaN(d)) ? `${d.getMonth()+1}/${d.getDate()}` : '??'; 
-                
-                // 樓梯還是比對 "114年" 字串，這部分保持原樣
                 if (r.months && r.months.includes(`${year}年`)) { 
                     const parts = r.months.match(new RegExp(`${year}年\\s*([0-9,]+)`)); 
                     if(parts && parts[1]) { 
@@ -578,7 +558,8 @@ window.renderYearlyReport = function() {
                                 monthInfo[m] = { 
                                     status: r.status, date: collectDate, id: r.id, 
                                     amount: r.amount, fullDate: r.date, type: r.type, 
-                                    floor: r.floor, note: r.note, months: r.months 
+                                    floor: r.floor, note: r.note, months: r.months,
+                                    category: r.category 
                                 }; 
                             } 
                         }); 
@@ -591,12 +572,13 @@ window.renderYearlyReport = function() {
                 const info = monthInfo[m]; 
                 let boxClass = 'border border-gray-100 bg-gray-50 rounded p-2 flex flex-col justify-between min-h-[70px] relative transition-all active:scale-95';
                 let content = `<span class="text-xs text-gray-300 font-bold absolute top-1 right-2">${m}月</span>`; 
-                let onclick = `openReportAction('add', '${addr}', ${year}, ${m})`; 
+                let onclick = `openReportAction('add', '${addr}', ${year}, ${m}, null, null, null, null, null, null, null, null, 'stairs')`; 
 
                 if(info) { 
                     const safeNote = (info.note || '').replace(/'/g, "\\'");
                     const safeMonths = (info.months || '').replace(/'/g, "\\'");
-                    onclick = `openReportAction('edit', '${addr}', ${year}, ${m}, '${info.id}', '${info.fullDate}', ${info.amount}, '${info.type}', '${info.floor}', '${safeNote}', '${info.status}', '${safeMonths}')`; 
+                    // ★★★ 關鍵：傳入 category ★★★
+                    onclick = `openReportAction('edit', '${addr}', ${year}, ${m}, '${info.id}', '${info.fullDate}', ${info.amount}, '${info.type}', '${info.floor}', '${safeNote}', '${info.status}', '${safeMonths}', '${info.category || 'stairs'}')`; 
                     
                     let typeText = '💵'; let typeBg = 'bg-emerald-50 text-emerald-700';
                     if(info.type === 'transfer') { typeText = '🏦'; typeBg = 'bg-blue-50 text-blue-700'; }
@@ -621,14 +603,20 @@ window.renderYearlyReport = function() {
 // --- Modal Functions ---
 
 // NEW: 增加 monthsStr 參數
-window.openReportAction = function(mode, address, year, month, recordId, date, amount, type, floor, note, status, monthsStr) { 
+// ==========================================
+// 2. 打開編輯視窗 (新增：類別選擇按鈕)
+// ==========================================
+window.openReportAction = function(mode, address, year, month, recordId, date, amount, type, floor, note, status, monthsStr, category) { 
     const title = document.getElementById('reportActionTitle'); 
     const content = document.getElementById('reportActionContent'); 
+    
+    // 預設分類 (如果沒傳就看 appState，再沒有就預設 stairs)
+    if(!category) category = window.appState.reportCategory === 'all' ? 'stairs' : window.appState.reportCategory;
+
     const getTypeSelect = (id, currentVal) => `<div><label class="block text-xs text-gray-500 mb-1">方式</label><select id="${id}" class="w-full p-2 border rounded bg-white"><option value="cash" ${currentVal === 'cash' ? 'selected' : ''}>💵 現金</option><option value="transfer" ${currentVal === 'transfer' ? 'selected' : ''}>🏦 匯款</option><option value="linepay" ${currentVal === 'linepay' ? 'selected' : ''}>🟢 LinePay</option><option value="dad" ${currentVal === 'dad' ? 'selected' : ''}>👴 匯給爸爸</option></select></div>`;
     const getFloorInput = (id, val) => `<div><label class="block text-xs text-gray-500 mb-1">樓層/戶號</label><input type="text" id="${id}" value="${val || ''}" class="w-full p-2 border rounded bg-white" placeholder="例如：5F"></div>`;
     const getNoteInput = (id, val) => `<div><label class="block text-xs text-gray-500 mb-1">備註</label><input type="text" id="${id}" value="${val || ''}" class="w-full p-2 border rounded bg-white" placeholder="備註..."></div>`;
     
-    // Checkbox for Updating Default Price
     const getUpdatePriceCheckbox = () => `<label class="flex items-center mt-2 text-xs text-blue-600 font-bold bg-blue-50 p-2 rounded cursor-pointer select-none"><input type="checkbox" id="updateDefaultPrice" class="mr-2 w-4 h-4"> 同步更新此地址的預設金額</label>`;
 
     const getStatusButtons = (statusVal) => {
@@ -665,8 +653,20 @@ window.openReportAction = function(mode, address, year, month, recordId, date, a
             monthSelectorHtml += '</div>';
         }
 
+        // ★★★ 新增：這裡加入了 [樓梯/水塔] 的選擇按鈕 ★★★
+        const isTank = category === 'tank';
+        const categoryHtml = `
+        <div class="mb-3 p-2 bg-yellow-50 border border-yellow-200 rounded">
+            <label class="block text-xs font-bold text-gray-600 mb-1">歸類修正 (請選擇正確項目)</label>
+            <div class="flex gap-4">
+                 <label class="flex items-center cursor-pointer"><input type="radio" name="reportEditCategory" value="stairs" ${!isTank ? 'checked' : ''} class="text-blue-600 h-4 w-4"> <span class="ml-1 text-sm font-bold text-gray-700">🪜 洗樓梯</span></label>
+                 <label class="flex items-center cursor-pointer"><input type="radio" name="reportEditCategory" value="tank" ${isTank ? 'checked' : ''} class="text-blue-600 h-4 w-4"> <span class="ml-1 text-sm font-bold text-gray-700">💧 洗水塔</span></label>
+            </div>
+        </div>`;
+
         content.innerHTML = ` 
             ${monthSelectorHtml ? '<div class="text-xs text-gray-400 mb-1">編輯月份</div>' + monthSelectorHtml : ''}
+            ${categoryHtml}
             <div class="grid grid-cols-2 gap-2 mb-2"><div><label class="block text-xs text-gray-500 mb-1">收款日期</label><input type="date" id="reportEditDate" value="${date}" class="w-full p-2 border rounded"></div>${getFloorInput('reportEditFloor', floor)}</div>
             <div class="grid grid-cols-2 gap-2 mb-2">
                 <div><label class="block text-xs text-gray-500 mb-1">金額</label><input type="number" id="reportEditAmount" value="${amount}" class="w-full p-2 border rounded"></div>
@@ -675,8 +675,12 @@ window.openReportAction = function(mode, address, year, month, recordId, date, a
             ${getUpdatePriceCheckbox()}
             ${getStatusButtons(status)}
             ${getNoteInput('reportEditNote', note)}
-            <div class="grid grid-cols-2 gap-2 mt-4"><button type="button" onclick="deleteReportRecord('${recordId}')" class="py-2 bg-red-100 text-red-600 rounded-lg font-bold">刪除紀錄</button><button type="button" onclick="updateReportRecord('${recordId}', '${address}', ${year}, document.getElementById('reportEditDate').value, document.getElementById('reportEditAmount').value, document.getElementById('reportEditType').value, document.getElementById('reportEditFloor').value, document.getElementById('reportEditNote').value, document.getElementById('reportEditStatus').value)" class="py-2 bg-blue-600 text-white rounded-lg font-bold">儲存修改</button></div>`; 
+            <div class="grid grid-cols-2 gap-2 mt-4">
+                <button type="button" onclick="deleteReportRecord('${recordId}')" class="py-2 bg-red-100 text-red-600 rounded-lg font-bold">刪除紀錄</button>
+                <button type="button" onclick="updateReportRecord('${recordId}', '${address}', ${year}, document.getElementById('reportEditDate').value, document.getElementById('reportEditAmount').value, document.getElementById('reportEditType').value, document.getElementById('reportEditFloor').value, document.getElementById('reportEditNote').value, document.getElementById('reportEditStatus').value, document.querySelector('input[name=reportEditCategory]:checked').value)" class="py-2 bg-blue-600 text-white rounded-lg font-bold">儲存修改</button>
+            </div>`; 
     } else { 
+        // 補登模式 (新增資料)
         const cust = window.appState.customers.find(c => c.address === address); 
         const defAmount = cust ? cust.amount : ''; 
         const defFloor = cust ? cust.floor : ''; 
@@ -694,9 +698,21 @@ window.openReportAction = function(mode, address, year, month, recordId, date, a
         }
         monthSelectorHtml += '</div>';
 
+        // 補登模式也要讓你可以選分類
+        const isTank = category === 'tank';
+        const categoryHtml = `
+        <div class="mb-3 p-2 bg-gray-50 border border-gray-200 rounded">
+            <label class="block text-xs font-bold text-gray-500 mb-1">服務項目</label>
+            <div class="flex gap-4">
+                 <label class="flex items-center cursor-pointer"><input type="radio" name="reportAddCategory" value="stairs" ${!isTank ? 'checked' : ''} class="text-blue-600"> <span class="ml-1 text-sm font-bold text-gray-700">🪜 樓梯</span></label>
+                 <label class="flex items-center cursor-pointer"><input type="radio" name="reportAddCategory" value="tank" ${isTank ? 'checked' : ''} class="text-blue-600"> <span class="ml-1 text-sm font-bold text-gray-700">💧 水塔</span></label>
+            </div>
+        </div>`;
+
         content.innerHTML = `
             <div class="text-xs text-gray-400 mb-1">選擇月份 (可多選，水塔可忽略)</div>
             ${monthSelectorHtml}
+            ${categoryHtml}
             <div class="grid grid-cols-2 gap-2 mb-2">
                 <div><label class="block text-xs text-gray-500 mb-1">收款日期</label><input type="date" id="reportAddDate" value="${today}" class="w-full p-2 border rounded"></div>
                 ${getFloorInput('reportAddFloor', defFloor)}
@@ -708,7 +724,7 @@ window.openReportAction = function(mode, address, year, month, recordId, date, a
             ${getUpdatePriceCheckbox()}
             ${getStatusButtons('completed')}
             ${getNoteInput('reportAddNote', '')}
-            <button type="button" onclick="batchAddReportRecords('${address}', ${year}, document.getElementById('reportAddAmount').value, document.getElementById('reportAddType').value, document.getElementById('reportAddFloor').value, document.getElementById('reportAddNote').value, document.getElementById('reportEditStatus').value)" class="w-full py-3 bg-emerald-500 text-white rounded-lg font-bold mt-4">確認補登</button>`; 
+            <button type="button" onclick="batchAddReportRecords('${address}', ${year}, document.getElementById('reportAddAmount').value, document.getElementById('reportAddType').value, document.getElementById('reportAddFloor').value, document.getElementById('reportAddNote').value, document.getElementById('reportEditStatus').value, document.querySelector('input[name=reportAddCategory]:checked').value)" class="w-full py-3 bg-emerald-500 text-white rounded-lg font-bold mt-4">確認補登</button>`; 
     } 
     document.getElementById('reportActionModal').classList.remove('hidden'); 
 };
@@ -794,6 +810,9 @@ window.batchAddReportRecords = async function(address, year, amount, type, floor
 window.closeReportActionModal = function(e) { if(e && e.target !== e.currentTarget) return; document.getElementById('reportActionModal').classList.add('hidden'); };
 
 // --- 更新紀錄 (加入 category 參數以修正分類) ---
+// ==========================================
+// 3. 儲存修改 (確保分類被儲存)
+// ==========================================
 window.updateReportRecord = async function(docId, address, year, date, amount, type, floor, note, status, category) { 
     if(!currentUser) return; 
     
@@ -814,12 +833,13 @@ window.updateReportRecord = async function(docId, address, year, date, amount, t
             floor: floor, 
             note: note, 
             status: status,
-            category: category // NEW: 這裡會把新的類別 (水塔/樓梯) 寫進去
+            category: category // ★★★ 關鍵：這裡把分類存進去資料庫 ★★★
         }; 
         if(newMonthsStr) { updateData.months = newMonthsStr; } 
         
         await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'records', docId), updateData); 
         window.closeReportActionModal(null); 
+        window.renderYearlyReport(); // 存檔後馬上重新整理報表
         window.showToast("已更新 (類別同步修正)"); 
     } catch(e) { 
         console.error(e);
