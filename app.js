@@ -400,6 +400,24 @@ function clearFormData() {
 
 // --- 7. 報表邏輯 (Year Report) ---
 
+// --- 補回：切換年報分類的開關 (全部/樓梯/水塔) ---
+window.setReportCategory = function(cat) {
+    // 1. 更新全域變數，告訴系統現在要看哪一種
+    window.appState.reportCategory = cat;
+    
+    // 2. 更新按鈕的顏色 (選中的變白底黑字，沒選的變灰字)
+    const btns = { 'all': 'rep-cat-all', 'stairs': 'rep-cat-stairs', 'tank': 'rep-cat-tank' };
+    Object.values(btns).forEach(id => {
+        const el = document.getElementById(id);
+        if(el) el.className = "flex-1 py-1.5 rounded-md text-sm font-bold text-gray-400 hover:bg-white hover:shadow-sm transition-all border border-transparent";
+    });
+    const active = document.getElementById(btns[cat]);
+    if(active) active.className = "flex-1 py-1.5 rounded-md text-sm font-bold bg-white text-gray-800 shadow-sm transition-all border border-gray-200";
+    
+    // 3. 最重要的一步：重新畫一次列表！
+    window.renderYearlyReport();
+};
+
 window.changeReportYear = function(delta) { 
     window.appState.reportYear += delta; 
     document.getElementById('reportYearDisplay').innerText = `${window.appState.reportYear}年`; 
