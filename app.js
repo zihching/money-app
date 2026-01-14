@@ -988,7 +988,59 @@ window.setCollector = function(name) {
     window.renderRecords();     // 下方的最近紀錄也要變
     window.renderManageCustomerList(); // 管理列表也要變
 };
-window.setServiceCategory = function(cat) { window.appState.currentServiceCategory = cat; const input = document.getElementById('inputServiceType'); if(input) input.value = cat; const btnStairs = document.getElementById('btn-cat-stairs'); const btnTank = document.getElementById('btn-cat-tank'); if (btnStairs && btnTank) { btnStairs.className = 'service-btn p-3 rounded-xl bg-orange-50 text-orange-400 font-bold flex justify-center items-center gap-2 shadow-sm'; btnTank.className = 'service-btn p-3 rounded-xl bg-cyan-50 text-cyan-400 font-bold flex justify-center items-center gap-2 shadow-sm'; if(cat === 'stairs') { btnStairs.classList.add('active', 'text-orange-700', 'border-orange-200'); btnStairs.classList.remove('text-orange-400'); } else { btnTank.classList.add('active', 'text-cyan-700', 'border-cyan-200'); btnTank.classList.remove('text-cyan-400'); } } };
+// ==========================================
+// 切換服務類別 (新增：水塔模式自動隱藏月份)
+// ==========================================
+window.setServiceCategory = function(cat) { 
+    // 1. 設定全域變數
+    window.appState.currentServiceCategory = cat; 
+    
+    const input = document.getElementById('inputServiceType'); 
+    if(input) input.value = cat; 
+
+    // 2. 切換按鈕樣式 (亮燈/熄燈)
+    const btnStairs = document.getElementById('btn-cat-stairs'); 
+    const btnTank = document.getElementById('btn-cat-tank'); 
+    
+    if (btnStairs && btnTank) { 
+        // 預設樣式 (灰色)
+        const baseClass = 'service-btn p-3 rounded-xl font-bold flex justify-center items-center gap-2 shadow-sm border cursor-pointer transition-all ';
+        btnStairs.className = baseClass + 'bg-gray-50 text-gray-400 border-transparent';
+        btnTank.className = baseClass + 'bg-gray-50 text-gray-400 border-transparent';
+
+        if(cat === 'stairs') { 
+            // 樓梯亮燈 (橘色)
+            btnStairs.className = baseClass + 'bg-orange-50 text-orange-600 border-orange-200 active'; 
+        } else { 
+            // 水塔亮燈 (藍色)
+            btnTank.className = baseClass + 'bg-cyan-50 text-cyan-600 border-cyan-200 active'; 
+        } 
+    } 
+    
+    // 3. ★★★ 關鍵修改：控制月份區域的顯示/隱藏 ★★★
+    const monthPickerGrid = document.getElementById('monthPickerGrid');
+    const yearDisplay = document.getElementById('pickerYearDisplay');
+    
+    // 我們嘗試找到包住年份的那個容器 (通常是 display 的父層)
+    const yearContainer = yearDisplay ? yearDisplay.parentElement : null;
+    // 我們嘗試找到「收費月份」這個標題 (通常是 grid 的上一個兄弟元素)
+    const monthLabel = monthPickerGrid ? monthPickerGrid.previousElementSibling : null;
+
+    if (cat === 'tank') {
+        // === 水塔模式：隱藏月份 ===
+        if(monthPickerGrid) monthPickerGrid.style.display = 'none';
+        if(yearContainer) yearContainer.style.display = 'none';
+        // 如果上面還有標題 (LABEL)，也一起藏起來比較美觀
+        if(monthLabel && monthLabel.tagName === 'DIV' && monthLabel.innerText.includes('月份')) {
+             monthLabel.style.display = 'none';
+        }
+    } else {
+        // === 樓梯模式：顯示月份 ===
+        if(monthPickerGrid) monthPickerGrid.style.display = 'grid';
+        if(yearContainer) yearContainer.style.display = 'flex';
+        if(monthLabel) monthLabel.style.display = 'flex'; // 恢復顯示
+    }
+};
 window.setEditCustCategory = function(cat) { document.getElementById('editCustCategory').value = cat; const s = document.getElementById('edit-cat-stairs'); const t = document.getElementById('edit-cat-tank'); s.className = 'p-2 rounded border text-sm font-bold bg-gray-50 text-gray-400 border-gray-200'; t.className = 'p-2 rounded border text-sm font-bold bg-gray-50 text-gray-400 border-gray-200'; if(cat === 'stairs') s.className = 'p-2 rounded border text-sm font-bold bg-orange-100 text-orange-800 border-orange-200'; else t.className = 'p-2 rounded border text-sm font-bold bg-cyan-100 text-cyan-800 border-cyan-200'; };
 window.openPendingMonthPicker = function(itemId, currentStr) { window.appState.pendingMonthTargetId = itemId; window.appState.modalPickerYear = 114; window.appState.tempModalSet = new Set(); const regex = /(\d+)年\s*([0-9,]+)/g; let match; while ((match = regex.exec(currentStr)) !== null) { const y = parseInt(match[1]); const ms = match[2].split(',').map(Number); ms.forEach(m => window.appState.tempModalSet.add(`${y}-${m}`)); } renderModalMonthGrid(); document.getElementById('monthPickerModal').classList.remove('hidden'); };
 window.changeModalYear = function(delta) { window.appState.modalPickerYear += delta; renderModalMonthGrid(); };
