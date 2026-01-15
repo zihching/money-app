@@ -421,12 +421,24 @@ window.setReportCategory = function(cat) {
 // ==========================================
 // Part 1. 年份切換邏輯 (改為西元)
 // ==========================================
+// ==========================================
+// Part 1. 年份切換邏輯 (全西元化 + 自動校正)
+// ==========================================
 window.changeReportYear = function(delta) { 
     window.appState.reportYear += delta; 
-    // 直接顯示西元年 (例如 2026年)
     document.getElementById('reportYearDisplay').innerText = `${window.appState.reportYear}年`; 
     window.renderYearlyReport(); 
 };
+
+// ★★★ 自動初始化：如果系統還停在民國年(例如114)，強制轉成西元(目前年份) ★★★
+if (window.appState.reportYear < 1000) {
+    const currentYear = new Date().getFullYear();
+    window.appState.reportYear = currentYear; 
+    window.appState.pickerYear = currentYear;
+    // 更新畫面上顯示的年份
+    const yearDisplay = document.getElementById('reportYearDisplay');
+    if(yearDisplay) yearDisplay.innerText = `${currentYear}年`;
+}
 
 // ★★★ 強制修正系統初始年份為西元 ★★★
 // (這段會自動偵測，如果年份還停在 114，就自動跳轉到 2026)
@@ -451,37 +463,32 @@ if (window.appState.reportYear < 1000) {
 // ==========================================
 // Part 2. 報表顯示 (西元化 + 雙重搜尋相容舊資料)
 // ==========================================
+// ==========================================
+// Part 2. 報表顯示 (西元版 + 智慧相容舊資料 + 樓梯水塔分流)
+// ==========================================
 window.renderYearlyReport = function() { 
     const container = document.getElementById('yearReportGrid'); 
     if(!container) return;
     container.innerHTML = ''; 
     
-    // 現在 reportYear 已經是西元了 (例如 2026)
+    // 目標西元年 (例如 2025)
     const targetYear = window.appState.reportYear; 
-    // 計算對應的民國年，為了找舊資料 (例如 115)
+    // 對應的民國年 (例如 114)，用來找舊資料
     const targetRocYear = targetYear - 1911;
 
-    // 更新畫面上的年份顯示
     document.getElementById('reportYearDisplay').innerText = `${targetYear}年`;
 
     const current = window.appState.currentCollector; 
     const catFilter = window.appState.reportCategory || 'all'; 
 
-    // 1. 篩選紀錄
+    // 1. 篩選紀錄 (不刪除不同年份的資料，保留給後面智慧判斷)
     let records = window.appState.records.filter(r => {
         const rCol = r.collector || '子晴';
         if(rCol !== current) return false;
 
         const rCat = r.category || 'stairs';
+        // 嚴格過濾：選樓梯就只給樓梯，選水塔就只給水塔
         if(catFilter !== 'all' && rCat !== catFilter) return false;
-
-        // ★★★ 關鍵修改：日期比對直接用西元 ★★★
-        const rDate = r.date || ''; 
-        const rYear = parseInt(rDate.split('-')[0]); 
-        
-        // 只要年份對了就抓出來
-        if (rYear !== targetYear) return false;
-
         return true;
     });
 
@@ -506,10 +513,12 @@ window.renderYearlyReport = function() {
         const custData = window.appState.customers.find(c => c.address === addr);
         const custNote = (custData && custData.note) ? custData.note : '';
         
+        // 判斷顯示模式 (強制分流)
         let isTankMode = false;
         if (catFilter === 'tank') isTankMode = true;
         else if (catFilter === 'stairs') isTankMode = false;
         else {
+            // "全部" 模式下，依照客戶屬性決定
             if (custData && custData.category === 'tank') isTankMode = true;
             else if (addrRecords.length > 0 && addrRecords[0].category === 'tank') isTankMode = true;
         }
@@ -522,14 +531,23 @@ window.renderYearlyReport = function() {
         card.className = 'bg-white p-3 rounded-lg border border-gray-100 shadow-sm mb-3'; 
         
         if (isTankMode) {
-            // === 水塔模式 (清單) ===
+            // === 水塔模式 (清單) - 嚴格看收款日期 ===
             let listHtml = '<div class="space-y-2">';
-            addrRecords.sort((a, b) => b.date.localeCompare(a.date));
+            
+            // 過濾：只顯示收款日期是 targetYear (例如2025) 的資料
+            const yearRecords = addrRecords.filter(r => {
+                const rDate = r.date || '';
+                // 這裡我們只認西元
+                const rY = parseInt(rDate.split('-')[0]);
+                return rY === targetYear;
+            });
 
-            if (addrRecords.length === 0) {
+            yearRecords.sort((a, b) => b.date.localeCompare(a.date));
+
+            if (yearRecords.length === 0) {
                 listHtml += '<div class="text-xs text-gray-400 text-center py-2 bg-gray-50 rounded">本年度尚無紀錄</div>';
             } else {
-                addrRecords.forEach(r => {
+                yearRecords.forEach(r => {
                     const d = new Date(r.date);
                     const dateStr = `${d.getMonth()+1}/${d.getDate()}`;
                     let sDateStr = r.serviceDate ? `<span class="bg-cyan-50 text-cyan-600 px-1 rounded ml-1">🚿 ${new Date(r.serviceDate).getMonth()+1}/${new Date(r.serviceDate).getDate()}</span>` : '';
@@ -537,6 +555,8 @@ window.renderYearlyReport = function() {
                     if(r.status === 'no_receipt') statusHtml = `<span class="text-red-500 text-xs ml-2"><i class="fa-solid fa-triangle-exclamation"></i> 欠單</span>`;
                     else if(r.status === 'no_payment') statusHtml = `<span class="text-orange-500 text-xs ml-2"><i class="fa-solid fa-hourglass-half"></i> 欠款</span>`;
                     const safeNote = (r.note || '').replace(/'/g, "\\'");
+                    
+                    // 傳入 'tank'
                     const onclick = `openReportAction('edit', '${addr}', ${targetYear}, ${d.getMonth()+1}, '${r.id}', '${r.date}', ${r.amount}, '${r.type}', '${r.floor || ''}', '${safeNote}', '${r.status}', '${r.months || ''}', 'tank')`;
 
                     listHtml += `
@@ -554,19 +574,18 @@ window.renderYearlyReport = function() {
             card.innerHTML = `<div class="font-bold text-cyan-700 mb-2 border-b border-cyan-100 pb-2 text-sm flex justify-between items-center"><div><span>💧 ${addr}</span> ${noteHtml}</div><div class="flex items-center gap-2"><span class="text-xs text-gray-300 font-normal">#${targetYear}</span>${addBtn}</div></div>${listHtml}`;
 
         } else {
-            // === 樓梯模式 (12宮格 - 智慧相容) ===
+            // === 樓梯模式 (12宮格) - 智慧抓取舊資料 ===
             const monthInfo = Array(13).fill(null); 
             addrRecords.forEach(r => { 
                 const d = new Date(r.date); 
                 const collectDate = (d instanceof Date && !isNaN(d)) ? `${d.getMonth()+1}/${d.getDate()}` : '??'; 
                 
-                // ★★★ 智慧相容：同時找 "2026年" 和 "115年" ★★★
-                // 這樣你以前存的資料 (114年) 在你看 2025年 報表時，依然會顯示！
+                // ★★★ 關鍵邏輯：同時找 "2025年" 和 "114年" ★★★
                 const hasGregorian = r.months && r.months.includes(`${targetYear}年`);
                 const hasROC = r.months && r.months.includes(`${targetRocYear}年`);
 
                 if (hasGregorian || hasROC) { 
-                    // 嘗試抓出月份
+                    // 嘗試抓出月份 (優先抓西元，沒有抓民國)
                     let match = r.months.match(new RegExp(`${targetYear}年\\s*([0-9,]+)`));
                     if (!match) match = r.months.match(new RegExp(`${targetRocYear}年\\s*([0-9,]+)`));
 
@@ -596,13 +615,18 @@ window.renderYearlyReport = function() {
                 if(info) { 
                     const safeNote = (info.note || '').replace(/'/g, "\\'");
                     const safeMonths = (info.months || '').replace(/'/g, "\\'");
+                    
                     onclick = `openReportAction('edit', '${addr}', ${targetYear}, ${m}, '${info.id}', '${info.fullDate}', ${info.amount}, '${info.type}', '${info.floor}', '${safeNote}', '${info.status}', '${safeMonths}', '${info.category || 'stairs'}')`; 
                     
                     let typeText = '💵'; let typeBg = 'bg-emerald-50 text-emerald-700';
-                    if(info.type === 'transfer') typeText = '🏦'; 
-                    // ... (其餘樣式省略，維持原樣) ...
-                    
-                    // 簡化顯示代碼，這裡保持你原本的卡片樣式邏輯
+                    if(info.type === 'transfer') { typeText = '🏦'; typeBg = 'bg-blue-50 text-blue-700'; }
+                    if(info.type === 'linepay') { typeText = 'LP'; typeBg = 'bg-lime-50 text-lime-700'; }
+                    if(info.type === 'dad') { typeText = '👴'; typeBg = 'bg-purple-50 text-purple-700'; }
+                    let borderClass = 'border-emerald-200 bg-white';
+                    if(info.status === 'no_receipt') borderClass = 'border-red-300 bg-red-50'; 
+                    if(info.status === 'no_payment') borderClass = 'border-orange-300 bg-orange-50'; 
+
+                    boxClass = `border ${borderClass} rounded p-2 flex flex-col justify-between min-h-[70px] relative shadow-sm cursor-pointer active:scale-95`;
                     content = `<div class="flex justify-between items-start mb-1"><span class="text-xs font-bold text-gray-400 flex items-center">${m}月</span><span class="text-[10px] px-1 rounded ${typeBg}">${typeText}</span></div><div class="flex justify-between items-end"><div><div class="text-[10px] text-gray-500">${info.date}收</div></div><div class="font-bold text-emerald-600 text-sm">$${info.amount}</div></div>`;
                 } 
                 monthHtml += `<div class="${boxClass}" onclick="${onclick}">${content}</div>`; 
@@ -1129,6 +1153,9 @@ window.updateAddressSuggestions = function(customers) {
 // ==========================================
 // Part 3. 明細列表 (自動合併相同地址 + 顯示月份)
 // ==========================================
+// ==========================================
+// Part 3. 明細列表 (自動合併相同地址 + 顯示月份)
+// ==========================================
 window.showBreakdown = function(type) {
     const list = document.getElementById('breakdownList');
     const modal = document.getElementById('breakdownModal');
@@ -1155,7 +1182,6 @@ window.showBreakdown = function(type) {
         if(!col || (col !== '子晴' && col !== '子涵' && col !== '宗敬')) col = '其他';
         if (col !== current) return false;
         
-        // 類型篩選
         if (type === 'no_receipt') return r.status === 'no_receipt';
         if (type === 'no_payment') return r.status === 'no_payment';
         if (r.status === 'no_payment') return false; 
@@ -1169,7 +1195,7 @@ window.showBreakdown = function(type) {
     dateRangeEl.innerText = rangeText;
     list.innerHTML = '';
 
-    // ★★★ 關鍵修改：合併相同地址 ★★★
+    // ★★★ 合併邏輯 ★★★
     const groupMap = new Map();
     let total = 0;
 
@@ -1183,12 +1209,12 @@ window.showBreakdown = function(type) {
         const data = groupMap.get(r.address);
         data.amount += amt;
         
-        // 收集日期 (例如 1/14)
+        // 收集日期
         const d = new Date(r.date);
         const dStr = `${d.getMonth()+1}/${d.getDate()}`;
         if (!data.dates.includes(dStr)) data.dates.push(dStr);
 
-        // 收集月份備註 (例如 1月, 2月) - 只保留數字部分
+        // 收集月份備註 (移除 "年", "月" 字眼，只留數字)
         if (r.months) {
             const mStr = r.months.replace(/.*?年\s*/, '').replace(/月/g, '');
             if(mStr) data.months.push(mStr);
@@ -1202,7 +1228,9 @@ window.showBreakdown = function(type) {
             const dateStr = val.dates.join(', ');
             let monthHint = '';
             if (val.months.length > 0) {
-                monthHint = `<div class="text-xs text-gray-400 mt-1">(${val.months.join(', ')}月)</div>`;
+                // 過濾重複的月份數字
+                const uniqueMonths = [...new Set(val.months.join(',').split(','))].filter(Boolean).join(', ');
+                monthHint = `<div class="text-xs text-gray-400 mt-1">(${uniqueMonths}月)</div>`;
             }
             
             const div = document.createElement('div');
@@ -1256,8 +1284,11 @@ window.saveExpenses = function() {
 // ==========================================
 // Part 4. 結算頁面 (新增：一鍵結算功能)
 // ==========================================
+// ==========================================
+// Part 4. 結算頁面 (新增：一鍵結算功能)
+// ==========================================
 window.updateSummary = function() { 
-    // ... (前段計算邏輯保持精簡，但為了完整性我全部重寫一次確保不漏) ...
+    // 初始化統計
     let totalCashMe = 0, totalTransferMe = 0, totalLinePayMe = 0, totalDadMe = 0; 
     let catStats = { 'stairs': 0, 'tank': 0 }; 
     const current = window.appState.currentCollector; 
@@ -1298,39 +1329,35 @@ window.updateSummary = function() {
     document.getElementById('headerTransferTotal').innerText = fmt(totalTransferMe); 
     document.getElementById('headerGrandTotal').innerText = fmt(grandTotalMe); 
 
-    // 詳細列表
     document.getElementById('settleCash').innerText = fmt(totalCashMe); 
     document.getElementById('settleTransfer').innerText = fmt(totalTransferMe); 
     document.getElementById('settleLinePay').innerText = fmt(totalLinePayMe); 
     document.getElementById('settleDad').innerText = fmt(totalDadMe); 
     document.getElementById('settleTotal').innerText = fmt(grandTotalMe); 
     
-    // 計算扣除額 (包含薪水、已結算金額)
+    // 計算扣除額
     let totalDeduction = 0;
     document.querySelectorAll('.exp-amt').forEach(input => totalDeduction += (parseInt(input.value) || 0));
     document.getElementById('totalExpensesDisplay').innerText = fmt(totalDeduction);
 
-    // ★★★ 最終應給爸爸：(總收入 - 已給爸爸 - 薪水與其他支出) ★★★
-    // 邏輯：手上收到的錢 (userHolding) - 支出 (totalDeduction)
+    // ★★★ 最終應給爸爸：(手上有的錢 - 支出) ★★★
     const finalToDad = userHolding - totalDeduction; 
     const finalEl = document.getElementById('finalToDad');
     finalEl.innerText = fmt(finalToDad); 
 
-    // ★★★ 新增：結算按鈕 ★★★
-    // 如果還有錢要給 (finalToDad > 0)，就顯示按鈕
-    const settleBtnContainer = document.getElementById('settleBtnContainer');
-    if (!settleBtnContainer) {
-        // 如果 HTML 沒有容器，我們動態加在 finalToDad 的父元素下面
+    // ★★★ 按鈕顯示邏輯 ★★★
+    let container = document.getElementById('settleBtnContainer');
+    if (!container) {
+        // 動態產生容器
         const parent = finalEl.parentElement.parentElement;
         const div = document.createElement('div');
         div.id = 'settleBtnContainer';
         div.className = 'mt-4 text-center';
         parent.appendChild(div);
+        container = div;
     }
     
-    const container = document.getElementById('settleBtnContainer');
     if (finalToDad > 0) {
-        const todayStr = new Date().getMonth() + 1 + '/' + new Date().getDate();
         container.innerHTML = `
             <button onclick="doSettle(${finalToDad})" class="bg-green-500 text-white font-bold py-2 px-6 rounded-full shadow-lg active:scale-95 transition-transform animate-pulse">
                 ✅ 確認結算 (已給付 $${finalToDad})
@@ -1341,21 +1368,18 @@ window.updateSummary = function() {
         container.innerHTML = `<div class="text-gray-400 text-sm">✨ 目前已全數結清</div>`;
     }
 
-    // 更新分類統計 (樓梯/水塔)
+    // 更新分類統計
     document.getElementById('categoryBreakdown').innerHTML = ` 
         <div class="bg-white p-3 rounded-lg border border-orange-200 text-center"> <div class="text-xs text-orange-600 font-bold mb-1">🪜 洗樓梯</div> <div class="text-xl font-bold text-gray-800">${fmt(catStats.stairs)}</div> </div> 
         <div class="bg-white p-3 rounded-lg border border-cyan-200 text-center"> <div class="text-xs text-cyan-600 font-bold mb-1">💧 洗水塔</div> <div class="text-xl font-bold text-gray-800">${fmt(catStats.tank)}</div> </div> 
     `; 
 };
 
-// ★★★ 新增：執行結算函數 ★★★
+// ★★★ 執行結算函數 ★★★
 window.doSettle = function(amount) {
-    if(!confirm(`確定要將 $${amount} 標記為「已結算/已給付」嗎？\n這會新增一筆支出項目，將目前應給金額歸零。`)) return;
-    
+    if(!confirm(`確定要將 $${amount} 標記為「已結算/已給付」嗎？`)) return;
     const date = new Date();
     const dateStr = `${date.getMonth()+1}/${date.getDate()}`;
-    
-    // 自動新增一行支出
     window.addExpenseRow(`${dateStr} 結算給付`, amount);
     window.saveExpenses();
     window.updateSummary();
