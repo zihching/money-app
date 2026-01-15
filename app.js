@@ -5,7 +5,8 @@ import {
     onSnapshot, query, orderBy, enableIndexedDbPersistence, serverTimestamp 
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-// --- 1. 初始化全域變數 ---
+// --- 1. 初始化全域變數 (強制使用西元) ---
+const currentYear = new Date().getFullYear();
 window.appState = { 
     records: [], customers: [], pending: [], 
     currentCollector: '子晴', 
@@ -13,10 +14,10 @@ window.appState = {
     currentServiceCategory: 'stairs', 
     currentPendingAction: null, 
     selectedMonthsSet: new Set(), 
-    currentBaseAmount: 0,
-    pickerYear: 114, 
-    modalPickerYear: 114,
-    reportYear: 114, 
+    currentBaseAmount: 0, 
+    pickerYear: currentYear, 
+    modalPickerYear: currentYear,
+    reportYear: currentYear, // 預設為西元
     reportCategory: 'all', 
     pendingMonthTargetId: null,
     currentView: 'entry',
@@ -110,7 +111,8 @@ function refreshCurrentView() {
     const addr = document.getElementById('inputAddress');
     if(addr && addr.value) window.checkPaidStatus(addr.value);
 }
-// --- 4. 視窗與 UI 操作 (含排序與管理) ---
+
+// --- 4. 視窗與 UI 操作 ---
 
 window.openManageCustomerModal = function() {
     window.renderManageCustomerList();
@@ -133,11 +135,8 @@ window.renderManageCustomerList = function() {
     const list = document.getElementById('manageCustomerList');
     if(!list) return;
     const current = window.appState.currentCollector;
-    const catFilter = window.appState.reportCategory || 'all'; 
     const custs = window.appState.customers.filter(c => {
         if(!((c.collector === current) || (!c.collector && current === '子晴'))) return false;
-        const cCat = c.category || 'stairs';
-        if(catFilter !== 'all' && cCat !== catFilter) return false;
         return true;
     });
     list.innerHTML = '';
@@ -257,7 +256,7 @@ window.updateCustomerPrice = async function(address, newAmount) {
     }
 };
 
-// --- Window Functions (UI Logic) ---
+// --- 報表切換 ---
 window.setReportCategory = function(cat) {
     window.appState.reportCategory = cat;
     const btns = { 'all': 'rep-cat-all', 'stairs': 'rep-cat-stairs', 'tank': 'rep-cat-tank' };
@@ -361,7 +360,6 @@ window.closeDeleteModal = function(e) { if(e && e.target !== e.currentTarget) re
 window.doDeletePending = async function(docId) { if(!currentUser) return; await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'pending', docId)); window.closeDeleteModal(null); window.showToast("🗑️ 已刪除"); };
 window.doClearAllPending = async function() { if(!currentUser) return; const current = window.appState.currentCollector; const items = window.appState.pending.filter(i => (i.collector === current) || (!i.collector && current === '子晴') ); const batch = writeBatch(db); items.forEach(item => { const ref = doc(db, 'artifacts', APP_ID, 'public', 'data', 'pending', item.id); batch.delete(ref); }); try { await batch.commit(); window.closeDeleteModal(null); window.showToast("🗑️ 清單已清空"); } catch(e) { console.error(e); window.showToast("清空失敗"); } };
 window.deleteCustomer = async function(docId) { if(!currentUser) return; if(confirm("確定從常用名單移除？(不會刪除歷史記帳紀錄)")) { await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'customers', docId)); window.showToast("🗑️ 已刪除"); } };
-// --- 6. 表單與其他輔助功能 ---
 
 function getFormData() {
     const dateInput = document.getElementById('inputDate').value;
@@ -398,31 +396,8 @@ function clearFormData() {
     window.setStatus('completed'); 
 }
 
-// --- 7. 報表邏輯 (Year Report) ---
-
-// --- 補回：切換年報分類的開關 (全部/樓梯/水塔) ---
-window.setReportCategory = function(cat) {
-    // 1. 更新全域變數，告訴系統現在要看哪一種
-    window.appState.reportCategory = cat;
-    
-    // 2. 更新按鈕的顏色 (選中的變白底黑字，沒選的變灰字)
-    const btns = { 'all': 'rep-cat-all', 'stairs': 'rep-cat-stairs', 'tank': 'rep-cat-tank' };
-    Object.values(btns).forEach(id => {
-        const el = document.getElementById(id);
-        if(el) el.className = "flex-1 py-1.5 rounded-md text-sm font-bold text-gray-400 hover:bg-white hover:shadow-sm transition-all border border-transparent";
-    });
-    const active = document.getElementById(btns[cat]);
-    if(active) active.className = "flex-1 py-1.5 rounded-md text-sm font-bold bg-white text-gray-800 shadow-sm transition-all border border-gray-200";
-    
-    // 3. 最重要的一步：重新畫一次列表！
-    window.renderYearlyReport();
-};
-
 // ==========================================
-// Part 1. 年份切換邏輯 (改為西元)
-// ==========================================
-// ==========================================
-// Part 1. 年份切換邏輯 (全西元化 + 自動校正)
+// Part 1. 年份切換邏輯 (全西元化)
 // ==========================================
 window.changeReportYear = function(delta) { 
     window.appState.reportYear += delta; 
@@ -430,50 +405,17 @@ window.changeReportYear = function(delta) {
     window.renderYearlyReport(); 
 };
 
-// ★★★ 自動初始化：如果系統還停在民國年(例如114)，強制轉成西元(目前年份) ★★★
-if (window.appState.reportYear < 1000) {
-    const currentYear = new Date().getFullYear();
-    window.appState.reportYear = currentYear; 
-    window.appState.pickerYear = currentYear;
-    // 更新畫面上顯示的年份
-    const yearDisplay = document.getElementById('reportYearDisplay');
-    if(yearDisplay) yearDisplay.innerText = `${currentYear}年`;
-}
-
-// ★★★ 強制修正系統初始年份為西元 ★★★
-// (這段會自動偵測，如果年份還停在 114，就自動跳轉到 2026)
-if (window.appState.reportYear < 1000) {
-    window.appState.reportYear = new Date().getFullYear(); 
-    window.appState.pickerYear = new Date().getFullYear();
-}
-
 // ==========================================
-// FIX: 修復水塔年份比對問題 (114 vs 2025)
-// ==========================================
-// ==========================================
-// FIX: 修復水塔年份比對問題 (114 vs 2025)
-// ==========================================
-// ==========================================
-// 1. 報表顯示邏輯 (已修復：嚴格區分樓梯/水塔 + 年份修正)
-// ==========================================
-// ==========================================
-// 1. 報表顯示邏輯 (終極修復：強制區分顯示模式)
-// ==========================================
-
-// ==========================================
-// Part 2. 報表顯示 (西元化 + 雙重搜尋相容舊資料)
-// ==========================================
-// ==========================================
-// Part 2. 報表顯示 (西元版 + 智慧相容舊資料 + 樓梯水塔分流)
+// Part 2. 報表顯示 (智慧抓取：全西元 + 相容舊資料)
 // ==========================================
 window.renderYearlyReport = function() { 
     const container = document.getElementById('yearReportGrid'); 
     if(!container) return;
     container.innerHTML = ''; 
     
-    // 目標西元年 (例如 2025)
+    // 目標西元年 (例如 2026)
     const targetYear = window.appState.reportYear; 
-    // 對應的民國年 (例如 114)，用來找舊資料
+    // 對應的民國年 (例如 115)，用來找舊資料
     const targetRocYear = targetYear - 1911;
 
     document.getElementById('reportYearDisplay').innerText = `${targetYear}年`;
@@ -487,7 +429,6 @@ window.renderYearlyReport = function() {
         if(rCol !== current) return false;
 
         const rCat = r.category || 'stairs';
-        // 嚴格過濾：選樓梯就只給樓梯，選水塔就只給水塔
         if(catFilter !== 'all' && rCat !== catFilter) return false;
         return true;
     });
@@ -518,7 +459,6 @@ window.renderYearlyReport = function() {
         if (catFilter === 'tank') isTankMode = true;
         else if (catFilter === 'stairs') isTankMode = false;
         else {
-            // "全部" 模式下，依照客戶屬性決定
             if (custData && custData.category === 'tank') isTankMode = true;
             else if (addrRecords.length > 0 && addrRecords[0].category === 'tank') isTankMode = true;
         }
@@ -531,10 +471,10 @@ window.renderYearlyReport = function() {
         card.className = 'bg-white p-3 rounded-lg border border-gray-100 shadow-sm mb-3'; 
         
         if (isTankMode) {
-            // === 水塔模式 (清單) - 嚴格看收款日期 ===
+            // === 水塔模式 (清單) ===
             let listHtml = '<div class="space-y-2">';
             
-            // 過濾：只顯示收款日期是 targetYear (例如2025) 的資料
+            // 過濾：只顯示收款日期是 targetYear (例如2026) 的資料
             const yearRecords = addrRecords.filter(r => {
                 const rDate = r.date || '';
                 // 這裡我們只認西元
@@ -556,7 +496,6 @@ window.renderYearlyReport = function() {
                     else if(r.status === 'no_payment') statusHtml = `<span class="text-orange-500 text-xs ml-2"><i class="fa-solid fa-hourglass-half"></i> 欠款</span>`;
                     const safeNote = (r.note || '').replace(/'/g, "\\'");
                     
-                    // 傳入 'tank'
                     const onclick = `openReportAction('edit', '${addr}', ${targetYear}, ${d.getMonth()+1}, '${r.id}', '${r.date}', ${r.amount}, '${r.type}', '${r.floor || ''}', '${safeNote}', '${r.status}', '${r.months || ''}', 'tank')`;
 
                     listHtml += `
@@ -574,13 +513,13 @@ window.renderYearlyReport = function() {
             card.innerHTML = `<div class="font-bold text-cyan-700 mb-2 border-b border-cyan-100 pb-2 text-sm flex justify-between items-center"><div><span>💧 ${addr}</span> ${noteHtml}</div><div class="flex items-center gap-2"><span class="text-xs text-gray-300 font-normal">#${targetYear}</span>${addBtn}</div></div>${listHtml}`;
 
         } else {
-            // === 樓梯模式 (12宮格) - 智慧抓取舊資料 ===
+            // === 樓梯模式 (12宮格) - 智慧相容舊資料 ===
             const monthInfo = Array(13).fill(null); 
             addrRecords.forEach(r => { 
                 const d = new Date(r.date); 
                 const collectDate = (d instanceof Date && !isNaN(d)) ? `${d.getMonth()+1}/${d.getDate()}` : '??'; 
                 
-                // ★★★ 關鍵邏輯：同時找 "2025年" 和 "114年" ★★★
+                // ★★★ 關鍵邏輯：同時找 "2026年" 和 "115年" ★★★
                 const hasGregorian = r.months && r.months.includes(`${targetYear}年`);
                 const hasROC = r.months && r.months.includes(`${targetRocYear}年`);
 
@@ -615,7 +554,6 @@ window.renderYearlyReport = function() {
                 if(info) { 
                     const safeNote = (info.note || '').replace(/'/g, "\\'");
                     const safeMonths = (info.months || '').replace(/'/g, "\\'");
-                    
                     onclick = `openReportAction('edit', '${addr}', ${targetYear}, ${m}, '${info.id}', '${info.fullDate}', ${info.amount}, '${info.type}', '${info.floor}', '${safeNote}', '${info.status}', '${safeMonths}', '${info.category || 'stairs'}')`; 
                     
                     let typeText = '💵'; let typeBg = 'bg-emerald-50 text-emerald-700';
@@ -637,17 +575,11 @@ window.renderYearlyReport = function() {
     }); 
 };
 
-// --- Modal Functions ---
-
-// NEW: 增加 monthsStr 參數
-// ==========================================
-// 2. 打開編輯視窗 (新增：類別選擇按鈕)
-// ==========================================
+// --- Modal Functions (Open Edit/Add) ---
 window.openReportAction = function(mode, address, year, month, recordId, date, amount, type, floor, note, status, monthsStr, category) { 
     const title = document.getElementById('reportActionTitle'); 
     const content = document.getElementById('reportActionContent'); 
     
-    // 預設分類 (如果沒傳就看 appState，再沒有就預設 stairs)
     if(!category) category = window.appState.reportCategory === 'all' ? 'stairs' : window.appState.reportCategory;
 
     const getTypeSelect = (id, currentVal) => `<div><label class="block text-xs text-gray-500 mb-1">方式</label><select id="${id}" class="w-full p-2 border rounded bg-white"><option value="cash" ${currentVal === 'cash' ? 'selected' : ''}>💵 現金</option><option value="transfer" ${currentVal === 'transfer' ? 'selected' : ''}>🏦 匯款</option><option value="linepay" ${currentVal === 'linepay' ? 'selected' : ''}>🟢 LinePay</option><option value="dad" ${currentVal === 'dad' ? 'selected' : ''}>👴 匯給爸爸</option></select></div>`;
@@ -690,7 +622,6 @@ window.openReportAction = function(mode, address, year, month, recordId, date, a
             monthSelectorHtml += '</div>';
         }
 
-        // ★★★ 新增：這裡加入了 [樓梯/水塔] 的選擇按鈕 ★★★
         const isTank = category === 'tank';
         const categoryHtml = `
         <div class="mb-3 p-2 bg-yellow-50 border border-yellow-200 rounded">
@@ -717,7 +648,6 @@ window.openReportAction = function(mode, address, year, month, recordId, date, a
                 <button type="button" onclick="updateReportRecord('${recordId}', '${address}', ${year}, document.getElementById('reportEditDate').value, document.getElementById('reportEditAmount').value, document.getElementById('reportEditType').value, document.getElementById('reportEditFloor').value, document.getElementById('reportEditNote').value, document.getElementById('reportEditStatus').value, document.querySelector('input[name=reportEditCategory]:checked').value)" class="py-2 bg-blue-600 text-white rounded-lg font-bold">儲存修改</button>
             </div>`; 
     } else { 
-        // 補登模式 (新增資料)
         const cust = window.appState.customers.find(c => c.address === address); 
         const defAmount = cust ? cust.amount : ''; 
         const defFloor = cust ? cust.floor : ''; 
@@ -735,14 +665,13 @@ window.openReportAction = function(mode, address, year, month, recordId, date, a
         }
         monthSelectorHtml += '</div>';
 
-        // 補登模式也要讓你可以選分類
         const isTank = category === 'tank';
         const categoryHtml = `
         <div class="mb-3 p-2 bg-gray-50 border border-gray-200 rounded">
             <label class="block text-xs font-bold text-gray-500 mb-1">服務項目</label>
             <div class="flex gap-4">
                  <label class="flex items-center cursor-pointer"><input type="radio" name="reportAddCategory" value="stairs" ${!isTank ? 'checked' : ''} class="text-blue-600"> <span class="ml-1 text-sm font-bold text-gray-700">🪜 樓梯</span></label>
-                 <label class="flex items-center cursor-pointer"><input type="radio" name="reportAddCategory" value="tank" ${isTank ? 'checked' : ''} class="text-blue-600"> <span class="ml-1 text-sm font-bold text-gray-700">💧 水塔</span></label>
+                 <label class="flex items-center cursor-pointer"><input type="radio" name="reportAddCategory" value="tank" ${isTank ? 'checked' : ''} class="text-blue-600"> <span class="ml-1 text-sm font-bold text-gray-700">💧 洗水塔</span></label>
             </div>
         </div>`;
 
@@ -794,10 +723,9 @@ window.toggleBatchMonth = function(btn, m) {
         window.appState.reportBatchMonths.add(m);
         btn.className = 'p-2 rounded border border-blue-600 text-sm font-bold bg-blue-500 text-white';
     }
-    // document.getElementById('batchCount').innerText = window.appState.reportBatchMonths.size;
 };
 
-window.batchAddReportRecords = async function(address, year, amount, type, floor, note, status) { 
+window.batchAddReportRecords = async function(address, year, amount, type, floor, note, status, category) { 
     if(!currentUser) return; 
     
     // 檢查是否要更新預設金額
@@ -807,22 +735,18 @@ window.batchAddReportRecords = async function(address, year, amount, type, floor
     const dateInput = document.getElementById('reportAddDate').value;
     const batch = writeBatch(db);
     
-    if (window.appState.reportBatchMonths.size > 0) {
+    if (window.appState.reportBatchMonths.size > 0 && category !== 'tank') {
         window.appState.reportBatchMonths.forEach(m => {
             const ref = doc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'records'));
             const record = { 
                 date: dateInput, address: address, amount: parseInt(amount), floor: floor || '', 
                 months: `${year}年 ${m}月`, note: note || '', 
                 type: type || 'cash', 
-                category: window.appState.reportCategory === 'all' ? 'stairs' : window.appState.reportCategory, 
+                category: category || 'stairs', 
                 collector: window.appState.currentCollector, 
                 status: status || 'completed', 
                 createdAt: serverTimestamp() 
             }; 
-            if(window.appState.reportCategory === 'all') {
-                 const cust = window.appState.customers.find(c => c.address === address);
-                 if(cust && cust.category) record.category = cust.category;
-            }
             batch.set(ref, record);
         });
     } else {
@@ -831,13 +755,11 @@ window.batchAddReportRecords = async function(address, year, amount, type, floor
             date: dateInput, address: address, amount: parseInt(amount), floor: floor || '', 
             months: '', note: note || '', 
             type: type || 'cash', 
-            category: window.appState.reportCategory === 'all' ? 'stairs' : window.appState.reportCategory, 
+            category: category || 'tank', // 水塔或其他預設
             collector: window.appState.currentCollector, 
             status: status || 'completed', 
             createdAt: serverTimestamp() 
         }; 
-        const cust = window.appState.customers.find(c => c.address === address);
-        if(cust && cust.category) record.category = cust.category;
         batch.set(ref, record);
     }
 
@@ -846,10 +768,6 @@ window.batchAddReportRecords = async function(address, year, amount, type, floor
 
 window.closeReportActionModal = function(e) { if(e && e.target !== e.currentTarget) return; document.getElementById('reportActionModal').classList.add('hidden'); };
 
-// --- 更新紀錄 (加入 category 參數以修正分類) ---
-// ==========================================
-// 3. 儲存修改 (確保分類被儲存)
-// ==========================================
 window.updateReportRecord = async function(docId, address, year, date, amount, type, floor, note, status, category) { 
     if(!currentUser) return; 
     
@@ -870,13 +788,13 @@ window.updateReportRecord = async function(docId, address, year, date, amount, t
             floor: floor, 
             note: note, 
             status: status,
-            category: category // ★★★ 關鍵：這裡把分類存進去資料庫 ★★★
+            category: category // ★★★ 這裡把分類存進去資料庫 ★★★
         }; 
-        if(newMonthsStr) { updateData.months = newMonthsStr; } 
+        if(newMonthsStr && category !== 'tank') { updateData.months = newMonthsStr; } 
         
         await updateDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'records', docId), updateData); 
         window.closeReportActionModal(null); 
-        window.renderYearlyReport(); // 存檔後馬上重新整理報表
+        window.renderYearlyReport(); 
         window.showToast("已更新 (類別同步修正)"); 
     } catch(e) { 
         console.error(e);
@@ -886,7 +804,7 @@ window.updateReportRecord = async function(docId, address, year, date, amount, t
 
 window.deleteReportRecord = async function(docId) { if(!currentUser) return; if(confirm("確定刪除？這月份將變回未收狀態")) { await deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'records', docId)); window.closeReportActionModal(null); window.showToast("🗑️ 已刪除"); } };
 
-// --- 8. UI RENDERING (Lists) ---
+// --- UI RENDERING (Lists) ---
 window.renderPendingList = function() { 
     const list = document.getElementById('pendingList'); 
     const container = document.getElementById('pendingContainer'); 
@@ -994,65 +912,54 @@ window.setCollector = function(name) {
     document.getElementById('listTitleIcon').innerText = icons[name]; 
     document.getElementById('settlePageTitle').innerText = `${name} 的薪水結算`; 
     
-    // NEW: 切換收費員時，強制更新總金額顯示
     window.updateSummary();
-    window.renderPendingList(); // 待收清單也要跟著變
-    window.renderRecords();     // 下方的最近紀錄也要變
-    window.renderManageCustomerList(); // 管理列表也要變
+    window.renderPendingList(); 
+    window.renderRecords(); 
+    window.renderManageCustomerList(); 
 };
+
 // ==========================================
 // 切換服務類別 (新增：水塔模式自動隱藏月份)
 // ==========================================
 window.setServiceCategory = function(cat) { 
-    // 1. 設定全域變數
     window.appState.currentServiceCategory = cat; 
     
     const input = document.getElementById('inputServiceType'); 
     if(input) input.value = cat; 
 
-    // 2. 切換按鈕樣式 (亮燈/熄燈)
     const btnStairs = document.getElementById('btn-cat-stairs'); 
     const btnTank = document.getElementById('btn-cat-tank'); 
     
     if (btnStairs && btnTank) { 
-        // 預設樣式 (灰色)
         const baseClass = 'service-btn p-3 rounded-xl font-bold flex justify-center items-center gap-2 shadow-sm border cursor-pointer transition-all ';
         btnStairs.className = baseClass + 'bg-gray-50 text-gray-400 border-transparent';
         btnTank.className = baseClass + 'bg-gray-50 text-gray-400 border-transparent';
 
         if(cat === 'stairs') { 
-            // 樓梯亮燈 (橘色)
             btnStairs.className = baseClass + 'bg-orange-50 text-orange-600 border-orange-200 active'; 
         } else { 
-            // 水塔亮燈 (藍色)
             btnTank.className = baseClass + 'bg-cyan-50 text-cyan-600 border-cyan-200 active'; 
         } 
     } 
     
-    // 3. ★★★ 關鍵修改：控制月份區域的顯示/隱藏 ★★★
     const monthPickerGrid = document.getElementById('monthPickerGrid');
     const yearDisplay = document.getElementById('pickerYearDisplay');
-    
-    // 我們嘗試找到包住年份的那個容器 (通常是 display 的父層)
     const yearContainer = yearDisplay ? yearDisplay.parentElement : null;
-    // 我們嘗試找到「收費月份」這個標題 (通常是 grid 的上一個兄弟元素)
     const monthLabel = monthPickerGrid ? monthPickerGrid.previousElementSibling : null;
 
     if (cat === 'tank') {
-        // === 水塔模式：隱藏月份 ===
         if(monthPickerGrid) monthPickerGrid.style.display = 'none';
         if(yearContainer) yearContainer.style.display = 'none';
-        // 如果上面還有標題 (LABEL)，也一起藏起來比較美觀
         if(monthLabel && monthLabel.tagName === 'DIV' && monthLabel.innerText.includes('月份')) {
              monthLabel.style.display = 'none';
         }
     } else {
-        // === 樓梯模式：顯示月份 ===
         if(monthPickerGrid) monthPickerGrid.style.display = 'grid';
         if(yearContainer) yearContainer.style.display = 'flex';
-        if(monthLabel) monthLabel.style.display = 'flex'; // 恢復顯示
+        if(monthLabel) monthLabel.style.display = 'flex'; 
     }
 };
+
 window.setEditCustCategory = function(cat) { document.getElementById('editCustCategory').value = cat; const s = document.getElementById('edit-cat-stairs'); const t = document.getElementById('edit-cat-tank'); s.className = 'p-2 rounded border text-sm font-bold bg-gray-50 text-gray-400 border-gray-200'; t.className = 'p-2 rounded border text-sm font-bold bg-gray-50 text-gray-400 border-gray-200'; if(cat === 'stairs') s.className = 'p-2 rounded border text-sm font-bold bg-orange-100 text-orange-800 border-orange-200'; else t.className = 'p-2 rounded border text-sm font-bold bg-cyan-100 text-cyan-800 border-cyan-200'; };
 window.openPendingMonthPicker = function(itemId, currentStr) { window.appState.pendingMonthTargetId = itemId; window.appState.modalPickerYear = 114; window.appState.tempModalSet = new Set(); const regex = /(\d+)年\s*([0-9,]+)/g; let match; while ((match = regex.exec(currentStr)) !== null) { const y = parseInt(match[1]); const ms = match[2].split(',').map(Number); ms.forEach(m => window.appState.tempModalSet.add(`${y}-${m}`)); } renderModalMonthGrid(); document.getElementById('monthPickerModal').classList.remove('hidden'); };
 window.changeModalYear = function(delta) { window.appState.modalPickerYear += delta; renderModalMonthGrid(); };
@@ -1064,16 +971,13 @@ window.closeHistory = function(e) { if(e && e.target !== e.currentTarget) return
 window.renderCustomerSettings = function() { const list = document.getElementById('customerListSettings'); const current = window.appState.currentCollector; const customers = window.appState.customers.filter(c => (c.collector === current) || (!c.collector && current === '子晴') ); list.innerHTML = ''; if(customers.length === 0) { list.innerHTML = `<div class="text-center text-gray-400 text-xs py-2">尚未建立 ${current} 的常用客戶</div>`; return; } customers.forEach(c => { const div = document.createElement('div'); div.className = 'flex justify-between items-center p-3 bg-white rounded-lg border border-gray-100 mb-2 shadow-sm'; const catIcon = c.category === 'tank' ? '💧' : '🪜'; 
 const dateTag = c.serviceDate ? `<span class="ml-1 text-[10px] bg-gray-100 text-gray-500 px-1 rounded">${c.serviceDate.slice(5)}</span>` : '';
 div.innerHTML = ` <div class="text-sm"> <div class="font-bold text-gray-800"><span class="mr-1">${catIcon}</span> ${c.address} ${dateTag} <span class="text-gray-400 text-xs font-normal">${c.floor || '不固定'}</span></div> <div class="text-emerald-600 font-bold">$${c.amount}</div> </div> <div class="flex"> <button type="button" onclick="openHistory('${c.address}')" class="text-orange-400 hover:text-orange-600 px-2 py-2"><i class="fa-solid fa-clock-rotate-left"></i></button> <button type="button" onclick="openEditCustomerModal('${c.id}', '${c.address}', ${c.amount}, '${c.floor || ''}', '${c.category || 'stairs'}', '${c.serviceDate || ''}')" class="text-gray-400 hover:text-blue-500 px-2 py-2"><i class="fa-solid fa-pen"></i></button> <button type="button" onclick="deleteCustomer('${c.id}')" class="text-gray-300 hover:text-red-500 px-2 py-2"><i class="fa-solid fa-trash-can"></i></button> </div> `; list.appendChild(div); }); };
-// NEW: 強化 renderCustomerSelect，確保只顯示當前收費員的地址
+
 window.renderCustomerSelect = function() { 
     const list = document.getElementById('customerSelectList'); 
     const search = document.getElementById('customerSearch').value.toLowerCase(); 
     const current = window.appState.currentCollector; 
     
-    // 關鍵過濾邏輯：只顯示屬於 current 的，或者沒有 collector 且 current 是子晴的
     const customers = window.appState.customers.filter(c => (c.collector === current) || (!c.collector && current === '子晴') ); 
-    
-    // 排序依照 order
     customers.sort((a, b) => (a.order || 0) - (b.order || 0));
 
     list.innerHTML = ''; 
@@ -1103,45 +1007,31 @@ window.renderCustomerSelect = function() {
         list.appendChild(btn); 
     }); 
 };
+
 window.selectCustomer = function(addr, defaultFloor, amount, category) { 
-    // 1. 先填入基本資料
     document.getElementById('inputAddress').value = addr; 
     document.getElementById('inputAmount').value = amount || ''; 
     if(category) window.setServiceCategory(category); 
-    
-    let finalFloor = defaultFloor || '';
-    
-    // 2. 去資料庫撈這個地址的歷史紀錄，並按日期新到舊排序
-    const history = window.appState.records
-        .filter(r => r.address === addr)
-        .sort((a,b) => b.date.localeCompare(a.date));
-    
-    // 3. 智慧判斷
+    let finalFloor = defaultFloor || ''; 
+    const history = window.appState.records.filter(r => r.address === addr).sort((a,b) => b.date.localeCompare(a.date)); 
     if (history.length > 0) {
-        const last = history[0]; // 取得最新的一筆
-        // 如果歷史紀錄有樓層，優先使用歷史紀錄的樓層 (覆蓋預設值)
-        if(last.floor) {
-            finalFloor = last.floor;
-        }
-        
-        // 顯示提示 Toast，告訴你上次是何時、收幾樓
+        const last = history[0]; 
+        if(last.floor) { finalFloor = last.floor; }
         const d = new Date(last.date);
         const lastDate = `${d.getMonth()+1}/${d.getDate()}`;
         window.showToast(`ℹ️ 上次：${lastDate} (${last.floor || '無樓層'})`, 3000);
     } else {
         window.showToast("已填入資料");
     }
-    
-    // 4. 最後填入樓層並檢查付費狀態
     document.getElementById('inputFloor').value = finalFloor;
     window.checkPaidStatus(addr); 
     window.closeCustomerSelect(null); 
 };
-// --- 13. Auto-Complete (New Helper) ---
+
 window.updateAddressSuggestions = function(customers) {
     const dataList = document.getElementById('addressSuggestions');
     if(!dataList) return;
-    dataList.innerHTML = ''; // 清空舊的
+    dataList.innerHTML = ''; 
     const uniqueAddresses = new Set(customers.map(c => c.address));
     uniqueAddresses.forEach(addr => {
         const option = document.createElement('option');
@@ -1153,9 +1043,6 @@ window.updateAddressSuggestions = function(customers) {
 // ==========================================
 // Part 3. 明細列表 (自動合併相同地址 + 顯示月份)
 // ==========================================
-// ==========================================
-// Part 3. 明細列表 (自動合併相同地址 + 顯示月份)
-// ==========================================
 window.showBreakdown = function(type) {
     const list = document.getElementById('breakdownList');
     const modal = document.getElementById('breakdownModal');
@@ -1164,7 +1051,6 @@ window.showBreakdown = function(type) {
     const dateRangeEl = document.getElementById('breakdownDateRange');
     const monthPicker = document.getElementById('settleMonthPicker');
     
-    // 取得篩選日期範圍
     let sDate = '', eDate = '', rangeText = '全部時間';
     if(monthPicker && monthPicker.value) {
         const [y, m] = monthPicker.value.split('-');
@@ -1173,7 +1059,6 @@ window.showBreakdown = function(type) {
         rangeText = `${y}年 ${m}月`;
     }
 
-    // 篩選資料
     const current = window.appState.currentCollector;
     let filteredRecords = window.appState.records.filter(r => {
         if (sDate && r.date < sDate) return false;
@@ -1195,7 +1080,6 @@ window.showBreakdown = function(type) {
     dateRangeEl.innerText = rangeText;
     list.innerHTML = '';
 
-    // ★★★ 合併邏輯 ★★★
     const groupMap = new Map();
     let total = 0;
 
@@ -1209,12 +1093,10 @@ window.showBreakdown = function(type) {
         const data = groupMap.get(r.address);
         data.amount += amt;
         
-        // 收集日期
         const d = new Date(r.date);
         const dStr = `${d.getMonth()+1}/${d.getDate()}`;
         if (!data.dates.includes(dStr)) data.dates.push(dStr);
 
-        // 收集月份備註 (移除 "年", "月" 字眼，只留數字)
         if (r.months) {
             const mStr = r.months.replace(/.*?年\s*/, '').replace(/月/g, '');
             if(mStr) data.months.push(mStr);
@@ -1228,7 +1110,6 @@ window.showBreakdown = function(type) {
             const dateStr = val.dates.join(', ');
             let monthHint = '';
             if (val.months.length > 0) {
-                // 過濾重複的月份數字
                 const uniqueMonths = [...new Set(val.months.join(',').split(','))].filter(Boolean).join(', ');
                 monthHint = `<div class="text-xs text-gray-400 mt-1">(${uniqueMonths}月)</div>`;
             }
@@ -1245,9 +1126,10 @@ window.showBreakdown = function(type) {
             list.appendChild(div);
         });
     }
-    totalEl.innerText = `$${total.toLocaleString()}`;
+    totalEl.innerText = `總計 : $${total.toLocaleString()}`;
     modal.classList.remove('hidden');
 };
+
 window.closeBreakdownModal = function(e) { if(e && e.target !== e.currentTarget) return; document.getElementById('breakdownModal').classList.add('hidden'); };
 window.changeSettleMonth = function(delta) {
     const picker = document.getElementById('settleMonthPicker');
@@ -1260,7 +1142,6 @@ window.changeSettleMonth = function(delta) {
     window.updateSummary();
 };
 
-// NEW: 結算邏輯升級 - 支援多筆支出
 window.addExpenseRow = function(name='', amt='') {
     const div = document.createElement('div');
     div.className = 'flex gap-2 items-center expense-row';
@@ -1284,16 +1165,11 @@ window.saveExpenses = function() {
 // ==========================================
 // Part 4. 結算頁面 (新增：一鍵結算功能)
 // ==========================================
-// ==========================================
-// Part 4. 結算頁面 (新增：一鍵結算功能)
-// ==========================================
 window.updateSummary = function() { 
-    // 初始化統計
     let totalCashMe = 0, totalTransferMe = 0, totalLinePayMe = 0, totalDadMe = 0; 
     let catStats = { 'stairs': 0, 'tank': 0 }; 
     const current = window.appState.currentCollector; 
     
-    // 取得日期篩選
     const monthPicker = document.getElementById('settleMonthPicker');
     let sDate = '', eDate = '';
     if(monthPicker && monthPicker.value) {
@@ -1302,7 +1178,6 @@ window.updateSummary = function() {
         eDate = `${y}-${m}-${new Date(y, m, 0).getDate()}`;
     }
 
-    // 計算總額
     window.appState.records.forEach(r => { 
         if (sDate && r.date < sDate) return;
         if (eDate && r.date > eDate) return;
@@ -1321,7 +1196,6 @@ window.updateSummary = function() {
     }); 
 
     const grandTotalMe = totalCashMe + totalTransferMe + totalLinePayMe + totalDadMe; 
-    // 手上有的錢 (現金+匯款+LP)，已經給爸爸的就不算了
     const userHolding = totalCashMe + totalTransferMe + totalLinePayMe; 
     const fmt = (n) => `$${n.toLocaleString()}`; 
 
@@ -1335,20 +1209,16 @@ window.updateSummary = function() {
     document.getElementById('settleDad').innerText = fmt(totalDadMe); 
     document.getElementById('settleTotal').innerText = fmt(grandTotalMe); 
     
-    // 計算扣除額
     let totalDeduction = 0;
     document.querySelectorAll('.exp-amt').forEach(input => totalDeduction += (parseInt(input.value) || 0));
     document.getElementById('totalExpensesDisplay').innerText = fmt(totalDeduction);
 
-    // ★★★ 最終應給爸爸：(手上有的錢 - 支出) ★★★
     const finalToDad = userHolding - totalDeduction; 
     const finalEl = document.getElementById('finalToDad');
     finalEl.innerText = fmt(finalToDad); 
 
-    // ★★★ 按鈕顯示邏輯 ★★★
     let container = document.getElementById('settleBtnContainer');
     if (!container) {
-        // 動態產生容器
         const parent = finalEl.parentElement.parentElement;
         const div = document.createElement('div');
         div.id = 'settleBtnContainer';
@@ -1368,14 +1238,13 @@ window.updateSummary = function() {
         container.innerHTML = `<div class="text-gray-400 text-sm">✨ 目前已全數結清</div>`;
     }
 
-    // 更新分類統計
     document.getElementById('categoryBreakdown').innerHTML = ` 
         <div class="bg-white p-3 rounded-lg border border-orange-200 text-center"> <div class="text-xs text-orange-600 font-bold mb-1">🪜 洗樓梯</div> <div class="text-xl font-bold text-gray-800">${fmt(catStats.stairs)}</div> </div> 
         <div class="bg-white p-3 rounded-lg border border-cyan-200 text-center"> <div class="text-xs text-cyan-600 font-bold mb-1">💧 洗水塔</div> <div class="text-xl font-bold text-gray-800">${fmt(catStats.tank)}</div> </div> 
     `; 
 };
 
-// ★★★ 執行結算函數 ★★★
+// ★★★ 執行結算 ★★★
 window.doSettle = function(amount) {
     if(!confirm(`確定要將 $${amount} 標記為「已結算/已給付」嗎？`)) return;
     const date = new Date();
@@ -1385,6 +1254,7 @@ window.doSettle = function(amount) {
     window.updateSummary();
     window.showToast("💰 已完成結算！");
 };
+
 window.clearSettleDates = function() { document.getElementById('settleStartDate').value = ''; document.getElementById('settleEndDate').value = ''; window.updateSummary(); };
 window.calculateSettlement = function() { window.updateSummary(); };
 window.addTag = function(text) { const el = document.getElementById('inputNote'); el.value = el.value ? el.value + `，${text}` : text; };
@@ -1403,37 +1273,31 @@ window.closeCustomerSelect = function(e) { if(e && e.target !== e.currentTarget)
 
 window.checkArrears = function() {
     const current = window.appState.currentCollector;
-    // 只抓取當前收費員的客戶 (或當前是子晴時，抓取無主客戶)
     const customers = window.appState.customers.filter(c => (c.collector === current) || (!c.collector && current === '子晴'));
     
-    // 計算現在是「絕對月份」(例如: 114年1月 = 1369月) 方便計算差距
     const now = new Date();
     const currentTwYear = now.getFullYear() - 1911;
     const currentMonth = now.getMonth() + 1;
     const currentAbs = currentTwYear * 12 + currentMonth;
 
     const list = document.getElementById('arrearsList');
-    if (!list) return; // 防呆
+    if (!list) return; 
     list.innerHTML = '';
     
     let count = 0;
 
     customers.forEach(c => {
-        // 1. 忽略洗水塔 (tank)，因為水塔通常不按月收
         if(c.category === 'tank') return;
 
-        // 2. 找出該客戶所有「已入帳」紀錄中，最新的月份
         let maxAbsPaid = 0;
         const recs = window.appState.records.filter(r => r.address === c.address);
         
         if (recs.length === 0) {
-            maxAbsPaid = 0; // 完全沒紀錄
+            maxAbsPaid = 0; 
         } else {
             recs.forEach(r => {
-                // 如果是「欠匯款 (no_payment)」或沒填月份，跳過
                 if(r.status === 'no_payment' || !r.months) return;
                 
-                // 解析月份字串 (例如 "113年 12月, 114年 1月")
                 const regex = /(\d+)年\s*([0-9,]+)/g;
                 let match;
                 while ((match = regex.exec(r.months)) !== null) {
@@ -1447,21 +1311,18 @@ window.checkArrears = function() {
             });
         }
 
-        // 3. 計算差距 (現在月份 - 上次繳費月份)
         let gap = 0;
         let lastPaidStr = "無紀錄";
         
         if (maxAbsPaid > 0) {
             gap = currentAbs - maxAbsPaid;
-            // 把絕對月份轉回 年/月 顯示
             const lpYear = Math.floor((maxAbsPaid - 1) / 12);
             const lpMonth = (maxAbsPaid - 1) % 12 + 1;
             lastPaidStr = `${lpYear}年${lpMonth}月`;
         } else {
-            gap = 999; // 標記為從未繳過
+            gap = 999; 
         }
 
-        // 4. 判斷條件：差距 >= 1 個月 (代表上個月沒繳)
         if (gap >= 1) {
             count++;
             const gapText = gap === 999 ? '新客戶 / 無紀錄' : `<span class="text-red-500 font-bold">${gap} 個月未繳</span>`;
@@ -1479,22 +1340,20 @@ window.checkArrears = function() {
                 </div>
             `;
             
-            // 點擊後，直接開啟「補登視窗」，並自動帶入下一個月
             item.onclick = () => {
                 window.closeArrearsModal(null);
                 let nextMonth = 1;
                 let nextYear = currentTwYear;
                 
-                // 自動計算下個月是何時
                 if (maxAbsPaid > 0) {
                     const nextAbs = maxAbsPaid + 1;
                     nextYear = Math.floor((nextAbs - 1) / 12);
                     nextMonth = (nextAbs - 1) % 12 + 1;
                 }
                 
-                // 呼叫年報的補登視窗
+                // 這裡要轉回西元年傳入
                 if(window.openReportAction) {
-                    window.openReportAction('add', c.address, nextYear, nextMonth);
+                    window.openReportAction('add', c.address, nextYear + 1911, nextMonth);
                 }
             };
             list.appendChild(item);
@@ -1505,12 +1364,10 @@ window.checkArrears = function() {
         list.innerHTML = '<div class="text-center text-gray-400 py-10"><i class="fa-solid fa-check-circle text-4xl text-emerald-200 mb-2"></i><br>太棒了！目前沒有逾期客戶</div>';
     }
 
-    // 顯示視窗
     const modal = document.getElementById('arrearsModal');
     if(modal) modal.classList.remove('hidden');
 };
 
-// 關閉欠費視窗的函式
 window.closeArrearsModal = function(e) {
     if(e && e.target !== e.currentTarget) return;
     const modal = document.getElementById('arrearsModal');
@@ -1523,7 +1380,6 @@ window.onload = function() {
     document.getElementById('inputDate').value = dateStr;
     document.getElementById('headerDate').innerText = `${today.getMonth() + 1}/${today.getDate()} (週${['日','一','二','三','四','五','六'][today.getDay()]})`;
     
-    // NEW: 載入多筆支出
     const savedExpenses = localStorage.getItem('cleaning_app_expenses_v2');
     if(savedExpenses) {
         try {
@@ -1531,7 +1387,7 @@ window.onload = function() {
             if(Array.isArray(data) && data.length > 0) {
                 data.forEach(item => window.addExpenseRow(item.name, item.amount));
             } else {
-                window.addExpenseRow('我的薪水', ''); // 預設一行
+                window.addExpenseRow('我的薪水', ''); 
             }
         } catch(e) { window.addExpenseRow('我的薪水', ''); }
     } else {
